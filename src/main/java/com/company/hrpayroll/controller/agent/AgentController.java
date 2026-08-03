@@ -1,0 +1,67 @@
+// controller/agent/AgentController.java — corrected, full file
+
+package com.company.hrpayroll.controller.agent;
+
+import com.company.hrpayroll.audit.Auditable;
+import com.company.hrpayroll.dto.request.agent.AgentRequest;
+import com.company.hrpayroll.dto.response.ApiResponse;
+import com.company.hrpayroll.dto.response.agent.AgentResponse;
+import com.company.hrpayroll.security.AccessGuard;
+import com.company.hrpayroll.service.agent.AgentService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/agents")
+@RequiredArgsConstructor
+public class AgentController {
+
+    private final AgentService agentService;
+    private final AccessGuard accessGuard;
+
+    @PostMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Auditable(action = "AGENT_CREATED", entityType = "Agent")
+    public ApiResponse<AgentResponse> createAgent(@Valid @RequestBody AgentRequest request) {
+        return ApiResponse.success("Agent created", agentService.createAgent(request));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Auditable(action = "AGENT_UPDATED", entityType = "Agent")
+    public ApiResponse<AgentResponse> updateAgent(
+            @PathVariable Long id, @Valid @RequestBody AgentRequest request
+    ) {
+        return ApiResponse.success("Agent updated", agentService.updateAgent(id, request));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or @accessGuard.isSameAgent(#id)")
+    public ApiResponse<AgentResponse> getAgentById(@PathVariable Long id) {
+        return ApiResponse.success(agentService.getAgentById(id));
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('AGENT')")
+    public ApiResponse<AgentResponse> getMyAgentProfile() {
+        return ApiResponse.success(agentService.getAgentById(accessGuard.currentAgentId()));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER')")
+    public ApiResponse<List<AgentResponse>> getAllAgents() {
+        return ApiResponse.success(agentService.getAllAgents());
+    }
+
+    @PutMapping("/{id}/deactivate")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "AGENT_DEACTIVATED", entityType = "Agent")
+    public ApiResponse<Void> deactivateAgent(@PathVariable Long id) {
+        agentService.deactivateAgent(id);
+        return ApiResponse.success("Agent deactivated", null);
+    }
+}
