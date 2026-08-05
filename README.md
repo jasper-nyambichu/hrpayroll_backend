@@ -351,7 +351,7 @@ Frontend repo: _link to be added_
 
 ## Author
 
-**[Your Name]**
+**Dickson Moseti**
 Full-Stack Developer
 
 ---
