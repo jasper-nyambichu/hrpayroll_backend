@@ -1,4 +1,4 @@
-// entity/attendance/BiometricTemplate.java
+// entity/attendance/BiometricTemplate.java — corrected
 package com.company.hrpayroll.entity.attendance;
 
 import com.company.hrpayroll.entity.BaseEntity;
@@ -26,8 +26,11 @@ public class BiometricTemplate extends BaseEntity {
     @Column(nullable = false)
     private Long branchId;
 
-    // Encrypted template data from the SecuGen SDK — never a raw image.
-    @Lob
+    // Fixed: removed @Lob. Fingerprint templates are small (bytes to a few
+    // KB), not large-object territory — a plain byte[] maps to PostgreSQL's
+    // bytea type by default, which matches the Flyway migration exactly.
+    // @Lob would have forced PostgreSQL's oid (large object) mechanism
+    // instead, which is what caused the schema validation mismatch.
     @Column(nullable = false)
     private byte[] templateData;
 

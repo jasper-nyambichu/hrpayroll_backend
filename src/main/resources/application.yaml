@@ -23,5 +23,23 @@ spring:
     virtual:
       enabled: true
 
+  mail:
+    host: localhost
+    port: 1025
+    username: ""
+    password: ""
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
 server:
   port: 8080
+
+app:
+  jwt:
+    secret: 24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=
+    access-token-expiry-ms: 900000
+    refresh-token-expiry-ms: 604800000
