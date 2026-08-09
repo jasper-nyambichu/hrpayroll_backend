@@ -1,6 +1,8 @@
 // controller/auth/AuthController.java
 package com.company.hrpayroll.controller.auth;
 
+import com.company.hrpayroll.dto.request.auth.AgentLoginRequest;
+import com.company.hrpayroll.dto.request.auth.EmployeeLoginRequest;
 import com.company.hrpayroll.dto.request.auth.LoginRequest;
 import com.company.hrpayroll.dto.request.auth.RefreshTokenRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
@@ -22,6 +24,16 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success("Login successful", authService.login(request));
+    }
+
+    @PostMapping("/employee-login")
+    public ApiResponse<AuthResponse> employeeLogin(@Valid @RequestBody EmployeeLoginRequest request) {
+        return ApiResponse.success("Login successful", authService.employeeLogin(request));
+    }
+
+    @PostMapping("/agent-login")
+    public ApiResponse<AuthResponse> agentLogin(@Valid @RequestBody AgentLoginRequest request) {
+        return ApiResponse.success("Login successful", authService.agentLogin(request));
     }
 
     @PostMapping("/refresh")
