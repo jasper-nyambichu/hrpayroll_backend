@@ -38,25 +38,14 @@ public class SecurityConfig {
         return provider;
     }
 
-    // Fixed: this Spring Security version's AuthenticationConfiguration
-    // .getAuthenticationManager() no longer declares a checked Exception,
-    // so `throws Exception` on this method was dead — nothing could ever
-    // trigger it. Removed rather than suppressed.
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) {
         return config.getAuthenticationManager();
     }
 
-    // Fixed: same reasoning — HttpSecurity's fluent configuration methods
-    // and build() no longer throw a checked Exception in this version
-    // (confirmed against the current Spring Security reference examples,
-    // which show this exact method with no throws clause). Removed.
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) {
         http
-                // Fixed: replaced the lambda with a method reference, since
-                // AbstractHttpConfigurer::disable matches the Customizer<T>
-                // functional interface directly — same behavior, less code.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -76,7 +65,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        // TODO: replace with your actual deployed frontend URL(s), e.g.
+        // "https://hrpayroll.vercel.app" or a custom domain if you set one up
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:3000",
+                "https://dhwarsh.vercel.app"
+        ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
