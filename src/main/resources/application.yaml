@@ -6,11 +6,17 @@ spring:
     url: jdbc:postgresql://localhost:5433/hrpayroll
     username: hrpayroll_user
     password: hrpayroll@128
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 900000
 
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
