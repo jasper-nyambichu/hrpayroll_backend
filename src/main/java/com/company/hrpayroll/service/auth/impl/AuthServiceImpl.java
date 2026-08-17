@@ -9,11 +9,13 @@ import com.company.hrpayroll.dto.response.auth.AuthResponse;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.employee.Employee;
+import com.company.hrpayroll.exception.AccountLockedException;
 import com.company.hrpayroll.exception.InvalidCredentialsException;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.security.CustomUserDetailsService;
 import com.company.hrpayroll.security.JwtService;
+import com.company.hrpayroll.security.LoginAttemptService;
 import com.company.hrpayroll.service.auth.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -26,52 +28,60 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
-    /**
-     * One message for every failure on every surface. Distinguishing "no such
-     * employee number" from "wrong PIN" would hand an attacker a free
-     * enumeration oracle over a 10,000-key PIN space.
-     */
     private static final String GENERIC_FAILURE = "Invalid credentials";
+    private static final String LOCKED_MESSAGE =
+            "Too many failed attempts. This account is locked for 15 minutes.";
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
     private final EmployeeRepository employeeRepository;
     private final CustomUserDetailsService userDetailsService;
     private final JwtService jwtService;
+    private final LoginAttemptService loginAttemptService;
 
     @Override
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.username())
-                .orElseThrow(() -> new InvalidCredentialsException(GENERIC_FAILURE));
+        String key = "login:" + request.username();
+        guardAgainstLockout(key);
 
-        verify(user.getUsername(), request.password());
+        User user = userRepository.findByUsername(request.username())
+                .orElseThrow(() -> fail(key));
+
+        verify(key, user.getUsername(), request.password());
+        loginAttemptService.recordSuccess(key);
         return buildAuthResponse(user);
     }
 
     @Override
     public AuthResponse employeeLogin(EmployeeLoginRequest request) {
+        String key = "employee:" + request.employeeNumber();
+        guardAgainstLockout(key);
+
         Employee employee = employeeRepository.findByEmployeeNumber(request.employeeNumber())
-                .orElseThrow(() -> new InvalidCredentialsException(GENERIC_FAILURE));
+                .orElseThrow(() -> fail(key));
 
         User user = userRepository.findByEmployeeId(employee.getId())
-                .orElseThrow(() -> new InvalidCredentialsException(GENERIC_FAILURE));
+                .orElseThrow(() -> fail(key));
 
-        verify(user.getUsername(), request.pin());
+        verify(key, user.getUsername(), request.pin());
+        loginAttemptService.recordSuccess(key);
         return buildAuthResponse(user);
     }
 
     @Override
     public AuthResponse agentLogin(AgentLoginRequest request) {
-        // The agent code is the username on the AGENT-role account linked to
-        // that agent — see AgentLoginRequest for why there is no code column.
+        String key = "agent:" + request.agentCode();
+        guardAgainstLockout(key);
+
         User user = userRepository.findByUsername(request.agentCode())
-                .orElseThrow(() -> new InvalidCredentialsException(GENERIC_FAILURE));
+                .orElseThrow(() -> fail(key));
 
         if (user.getRole() != Role.AGENT || user.getAgentId() == null) {
-            throw new InvalidCredentialsException(GENERIC_FAILURE);
+            throw fail(key);
         }
 
-        verify(user.getUsername(), request.password());
+        verify(key, user.getUsername(), request.password());
+        loginAttemptService.recordSuccess(key);
         return buildAuthResponse(user);
     }
 
@@ -93,20 +103,25 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse((User) userDetails);
     }
 
-    /**
-     * Runs the credential through the same AuthenticationManager on all three
-     * surfaces, so BCrypt matching, the active/locked checks on the User entity
-     * and any future authentication rules apply uniformly. Every
-     * AuthenticationException — bad password, disabled, locked — collapses to
-     * one 401; without this a deactivated account would surface as a 500.
-     */
-    private void verify(String username, String rawCredential) {
+    private void guardAgainstLockout(String key) {
+        if (loginAttemptService.isLocked(key)) {
+            throw new AccountLockedException(LOCKED_MESSAGE);
+        }
+    }
+
+    /** Records the failure against the lockout key and returns the exception to throw. */
+    private InvalidCredentialsException fail(String key) {
+        loginAttemptService.recordFailure(key);
+        return new InvalidCredentialsException(GENERIC_FAILURE);
+    }
+
+    private void verify(String key, String username, String rawCredential) {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, rawCredential)
             );
         } catch (AuthenticationException ex) {
-            throw new InvalidCredentialsException(GENERIC_FAILURE);
+            throw fail(key);
         }
     }
 

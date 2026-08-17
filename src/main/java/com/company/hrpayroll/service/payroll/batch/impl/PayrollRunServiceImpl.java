@@ -12,6 +12,7 @@ import com.company.hrpayroll.entity.payroll.PayrollRun;
 import com.company.hrpayroll.entity.payroll.PayrollRunStatus;
 import com.company.hrpayroll.entity.payroll.Payslip;
 import com.company.hrpayroll.exception.InvalidOperationException;
+import com.company.hrpayroll.exception.PayrollRunInProgressException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.payroll.AgentPayrollSummaryMapper;
 import com.company.hrpayroll.mapper.payroll.PayrollRunMapper;
@@ -24,6 +25,7 @@ import com.company.hrpayroll.repository.payroll.PayslipRepository;
 import com.company.hrpayroll.service.agentadvance.AgentAdvanceService;
 import com.company.hrpayroll.service.loan.LoanService;
 import com.company.hrpayroll.service.payroll.agentformula.AgentPayrollCalculationService;
+import com.company.hrpayroll.service.payroll.batch.PayrollLockService;
 import com.company.hrpayroll.service.payroll.batch.PayrollRunService;
 import com.company.hrpayroll.service.payroll.engine.PayrollCalculationService;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +58,8 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     private final PayslipMapper payslipMapper;
     private final AgentPayrollSummaryMapper agentPayrollSummaryMapper;
 
+    private final PayrollLockService payrollLockService;
+
     // Single transaction: the whole run either commits completely, or none
     // of it is saved — no PayrollRun row is left in a half-finished state,
     // which is exactly the "safe money handling" guarantee Spring Boot was
@@ -63,9 +67,20 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     // where Spring Batch chunking would replace the in-memory loop below —
     // same business logic, processed in restartable chunks instead of one
     // long transaction.
+    //
+    // The advisory lock at the top serializes runs system-wide: two
+    // concurrent requests could otherwise both pass validation and both
+    // process the same scope, producing duplicate payslips and duplicate
+    // payments. The lock is transaction-scoped and releases automatically
+    // on commit or rollback.
     @Override
     @Transactional
     public PayrollRunResponse runPayroll(PayrollRunRequest request, Long initiatedByUserId) {
+        if (!payrollLockService.tryAcquire()) {
+            throw new PayrollRunInProgressException(
+                    "Another payroll run is currently in progress. Please try again shortly.");
+        }
+
         validateRequest(request);
 
         List<Employee> employees = resolveEmployees(request);
