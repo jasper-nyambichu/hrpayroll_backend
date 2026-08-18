@@ -19,6 +19,18 @@ services:
       retries: 5
     networks:
       - hrpayroll-net
+  redis:
+    image: redis:7-alpine
+    container_name: hrpayroll-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrpayroll-net
   backend:
     build: .
     container_name: hrpayroll-backend
@@ -26,10 +38,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       JDK_JAVA_OPTIONS: "-Xmx400m -Xms128m"
     ports:
       - "8081:8080"
