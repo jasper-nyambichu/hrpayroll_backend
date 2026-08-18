@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -16,6 +18,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - hrpayroll-net
+
+  backend:
+    build: .
+    container_name: hrpayroll-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JDK_JAVA_OPTIONS: "-Xmx400m -Xms128m"
+    ports:
+      - "8081:8080" # Maps host port 8081 -> container port 8080
+    networks:
+      - hrpayroll-net
 
 volumes:
   hrpayroll_pgdata:
+
+networks:
+  hrpayroll-net:
+    driver: bridge
