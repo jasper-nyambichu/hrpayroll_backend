@@ -24,6 +24,9 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -31,6 +34,15 @@ public class AuthServiceImpl implements AuthService {
     private static final String GENERIC_FAILURE = "Invalid credentials";
     private static final String LOCKED_MESSAGE =
             "Too many failed attempts. This account is locked for 15 minutes.";
+
+    // Every role that should be able to reach the staff login surface.
+    // AGENT and EMPLOYEE deliberately excluded — they have their own
+    // dedicated endpoints below, and must never authenticate here even
+    // with a correct password.
+    private static final Set<Role> STAFF_ROLES = EnumSet.of(
+            Role.SUPER_ADMIN, Role.ADMIN, Role.HR_MANAGER, Role.PAYROLL_OFFICER,
+            Role.BRANCH_MANAGER, Role.FINANCE_OFFICER, Role.AUDITOR
+    );
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
@@ -47,6 +59,10 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> fail(key));
 
+        if (!STAFF_ROLES.contains(user.getRole())) {
+            throw fail(key);
+        }
+
         verify(key, user.getUsername(), request.password());
         loginAttemptService.recordSuccess(key);
         return buildAuthResponse(user);
@@ -62,6 +78,10 @@ public class AuthServiceImpl implements AuthService {
 
         User user = userRepository.findByEmployeeId(employee.getId())
                 .orElseThrow(() -> fail(key));
+
+        if (user.getRole() != Role.EMPLOYEE) {
+            throw fail(key);
+        }
 
         verify(key, user.getUsername(), request.pin());
         loginAttemptService.recordSuccess(key);
