@@ -13,4 +13,7 @@ public interface AttendanceService {
     AttendanceResponse clockOutManually(Long attendanceId, LocalDateTime clockOutTime);
     List<AttendanceResponse> getAttendanceForEmployee(Long employeeId, LocalDate start, LocalDate end);
     List<AttendanceResponse> getAttendanceForBranch(Long branchId, LocalDate start, LocalDate end);
+
+    /** For the live/polling dashboard feed — records created after `since`. */
+    List<AttendanceResponse> getLiveAttendanceForBranch(Long branchId, LocalDateTime since);
 }

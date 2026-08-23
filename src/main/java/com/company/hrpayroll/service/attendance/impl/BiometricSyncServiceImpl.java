@@ -13,6 +13,7 @@ import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.attendance.AttendanceMapper;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
+import com.company.hrpayroll.repository.attendance.BiometricSyncFailureRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
 import com.company.hrpayroll.service.attendance.BiometricSyncService;
@@ -36,6 +37,9 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     private final BiometricDeviceRepository biometricDeviceRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final AttendanceMapper attendanceMapper;
+
+
+    private final BiometricSyncFailureRepository syncFailureRepository; // new field
 
     @Override
     @Transactional
