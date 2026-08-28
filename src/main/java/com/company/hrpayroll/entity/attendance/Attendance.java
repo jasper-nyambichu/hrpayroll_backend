@@ -46,5 +46,6 @@ public class Attendance extends BaseEntity {
     private String eventId;
 
     private Long deviceId;
-    private Double matchConfidenceScore;
+    @Column(length = 30)
+    private String verifyMethod;
 }

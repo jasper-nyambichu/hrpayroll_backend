@@ -4,7 +4,6 @@ package com.company.hrpayroll.controller.attendance;
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.attendance.EnrollmentRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
-import com.company.hrpayroll.dto.response.attendance.BiometricTemplateResponse;
 import com.company.hrpayroll.service.attendance.BiometricEnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +22,9 @@ public class EnrollmentController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER')")
-    @Auditable(action = "BIOMETRIC_TEMPLATE_ENROLLED", entityType = "BiometricTemplate")
-    public ApiResponse<BiometricTemplateResponse> enrollTemplate(@Valid @RequestBody EnrollmentRequest request) {
-        return ApiResponse.success("Fingerprint enrolled", biometricEnrollmentService.enrollTemplate(request));
+    @Auditable(action = "BIOMETRIC_TERMINAL_MAPPED", entityType = "BiometricDeviceMapping")
+    public ApiResponse<Void> enrollMapping(@Valid @RequestBody EnrollmentRequest request) {
+        biometricEnrollmentService.enrollMapping(request);
+        return ApiResponse.success("Terminal user mapped to employee", null);
     }
 }

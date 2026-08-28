@@ -1,107 +1,98 @@
-// service/attendance/impl/AttendanceServiceImpl.java
+// service/attendance/impl/BiometricDeviceServiceImpl.java
 package com.company.hrpayroll.service.attendance.impl;
 
-import com.company.hrpayroll.dto.request.attendance.AttendanceRequest;
-import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
-import com.company.hrpayroll.entity.attendance.Attendance;
-import com.company.hrpayroll.entity.attendance.AttendanceSource;
-import com.company.hrpayroll.entity.employee.Employee;
+import com.company.hrpayroll.dto.request.attendance.DeviceRegistrationRequest;
+import com.company.hrpayroll.dto.response.attendance.BiometricDeviceResponse;
+import com.company.hrpayroll.dto.response.attendance.DeviceRegistrationResponse;
+import com.company.hrpayroll.entity.attendance.BiometricDevice;
+import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
-import com.company.hrpayroll.mapper.attendance.AttendanceMapper;
-import com.company.hrpayroll.repository.attendance.AttendanceRepository;
-import com.company.hrpayroll.repository.employee.EmployeeRepository;
-import com.company.hrpayroll.service.attendance.AttendanceService;
+import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
+import com.company.hrpayroll.repository.branch.BranchRepository;
+import com.company.hrpayroll.service.attendance.BiometricDeviceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class AttendanceServiceImpl implements AttendanceService {
+public class BiometricDeviceServiceImpl implements BiometricDeviceService {
 
-    private final AttendanceRepository attendanceRepository;
-    private final EmployeeRepository employeeRepository;
-    private final AttendanceMapper attendanceMapper;
+    // 32 random bytes -> 43-char URL-safe base64 token. Generated once,
+    // shown once in the response, never retrievable again — only the
+    // PasswordEncoder hash is persisted, matching how DeviceAuthFilter
+    // validates it later via passwordEncoder.matches(...).
+    private static final int TOKEN_BYTES = 32;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private final BiometricDeviceRepository biometricDeviceRepository;
+    private final BranchRepository branchRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
-    public AttendanceResponse clockInManually(AttendanceRequest request) {
-        Employee employee = employeeRepository.findById(request.employeeId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Employee not found with id: " + request.employeeId()));
-
-        LocalDate date = request.clockIn().toLocalDate();
-
-        boolean alreadyOpen = attendanceRepository
-                .findByEmployeeIdAndAttendanceDateAndClockOutIsNull(request.employeeId(), date)
-                .isPresent();
-        if (alreadyOpen) {
-            throw new InvalidOperationException("This employee already has an open clock-in for today");
+    @Transactional
+    public DeviceRegistrationResponse registerDevice(DeviceRegistrationRequest request) {
+        if (!branchRepository.existsById(request.branchId())) {
+            throw new ResourceNotFoundException("Branch not found with id: " + request.branchId());
         }
 
-        Attendance attendance = Attendance.builder()
-                .employeeId(employee.getId())
-                .branchId(employee.getBranchId())
-                .attendanceDate(date)
-                .clockIn(request.clockIn())
-                .clockOut(request.clockOut())
-                .source(AttendanceSource.MANUAL)
-                .status("PRESENT")
+        boolean serialTaken = biometricDeviceRepository.findByDeviceSerial(request.deviceSerial()).isPresent();
+        if (serialTaken) {
+            throw new InvalidOperationException(
+                    "A device is already registered with serial: " + request.deviceSerial());
+        }
+
+        String plaintextToken = generateToken();
+
+        BiometricDevice device = BiometricDevice.builder()
+                .branchId(request.branchId())
+                .deviceSerial(request.deviceSerial())
+                .deviceTokenHash(passwordEncoder.encode(plaintextToken))
+                .status("ACTIVE")
                 .build();
 
-        Attendance saved = attendanceRepository.save(attendance);
-        return attendanceMapper.toAttendanceResponse(saved, employee.getFullName());
+        BiometricDevice saved = biometricDeviceRepository.save(device);
+
+        // plaintextToken only ever exists in this response — not persisted anywhere else
+        return new DeviceRegistrationResponse(saved.getId(), saved.getDeviceSerial(), plaintextToken);
     }
 
     @Override
-    public AttendanceResponse clockOutManually(Long attendanceId, LocalDateTime clockOutTime) {
-        Attendance attendance = attendanceRepository.findById(attendanceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found with id: " + attendanceId));
+    public List<BiometricDeviceResponse> getDevicesByBranch(Long branchId) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + branchId));
 
-        if (attendance.getClockOut() != null) {
-            throw new InvalidOperationException("This attendance record is already clocked out");
-        }
-
-        attendance.setClockOut(clockOutTime);
-        Attendance saved = attendanceRepository.save(attendance);
-
-        String employeeName = employeeRepository.findById(saved.getEmployeeId())
-                .map(Employee::getFullName).orElse(null);
-        return attendanceMapper.toAttendanceResponse(saved, employeeName);
-    }
-
-    @Override
-    public List<AttendanceResponse> getAttendanceForEmployee(Long employeeId, LocalDate start, LocalDate end) {
-        String employeeName = employeeRepository.findById(employeeId)
-                .map(Employee::getFullName).orElse(null);
-
-        return attendanceRepository.findByEmployeeIdAndAttendanceDateBetween(employeeId, start, end).stream()
-                .map(a -> attendanceMapper.toAttendanceResponse(a, employeeName))
+        return biometricDeviceRepository.findByBranchId(branchId).stream()
+                .map(d -> new BiometricDeviceResponse(
+                        d.getId(),
+                        d.getBranchId(),
+                        branch.getName(),
+                        d.getDeviceSerial(),
+                        d.getLastSyncAt(),
+                        d.getStatus()
+                ))
                 .toList();
     }
 
     @Override
-    public List<AttendanceResponse> getAttendanceForBranch(Long branchId, LocalDate start, LocalDate end) {
-        return attendanceRepository.findByBranchIdAndAttendanceDateBetween(branchId, start, end).stream()
-                .map(a -> {
-                    String employeeName = employeeRepository.findById(a.getEmployeeId())
-                            .map(Employee::getFullName).orElse(null);
-                    return attendanceMapper.toAttendanceResponse(a, employeeName);
-                })
-                .toList();
+    @Transactional
+    public void deactivateDevice(Long deviceId) {
+        BiometricDevice device = biometricDeviceRepository.findById(deviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
+
+        device.setStatus("INACTIVE");
+        biometricDeviceRepository.save(device);
     }
 
-    @Override
-    public List<AttendanceResponse> getLiveAttendanceForBranch(Long branchId, LocalDateTime since) {
-        return attendanceRepository.findByBranchIdAndCreatedAtAfterOrderByCreatedAtAsc(branchId, since).stream()
-                .map(a -> {
-                    String employeeName = employeeRepository.findById(a.getEmployeeId())
-                            .map(Employee::getFullName).orElse(null);
-                    return attendanceMapper.toAttendanceResponse(a, employeeName);
-                })
-                .toList();
+    private String generateToken() {
+        byte[] bytes = new byte[TOKEN_BYTES];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

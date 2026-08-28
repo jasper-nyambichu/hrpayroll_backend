@@ -4,7 +4,7 @@ package com.company.hrpayroll.controller.attendance;
 import com.company.hrpayroll.dto.request.attendance.BiometricSyncRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
-import com.company.hrpayroll.dto.response.attendance.TemplateSyncItemResponse;
+import com.company.hrpayroll.dto.response.attendance.DeviceMappingItemResponse;
 import com.company.hrpayroll.security.DeviceAuthFilter;
 import com.company.hrpayroll.service.attendance.BiometricEnrollmentService;
 import com.company.hrpayroll.service.attendance.BiometricSyncService;
@@ -48,9 +48,9 @@ public class BiometricSyncController {
     // Pulled by the bridge-agent on startup and periodically thereafter to
     // refresh its local branch cache — this is TemplateSyncService's
     // consumer-facing endpoint.
-    @GetMapping("/templates")
-    public ApiResponse<List<TemplateSyncItemResponse>> getTemplatesForMyBranch(HttpServletRequest httpRequest) {
+    @GetMapping("/mappings")
+    public ApiResponse<List<DeviceMappingItemResponse>> getMappingsForMyBranch(HttpServletRequest httpRequest) {
         String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
-        return ApiResponse.success(biometricEnrollmentService.getTemplatesForDevice(deviceSerial));
+        return ApiResponse.success(biometricEnrollmentService.getMappingsForDevice(deviceSerial));
     }
 }

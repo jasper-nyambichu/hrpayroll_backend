@@ -93,4 +93,9 @@ public class AttendanceServiceImpl implements AttendanceService {
                 })
                 .toList();
     }
+
+    @Override
+    public List<AttendanceResponse> getLiveAttendanceForBranch(Long branchId, LocalDateTime since) {
+        return List.of();
+    }
 }
