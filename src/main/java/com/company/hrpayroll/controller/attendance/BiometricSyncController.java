@@ -41,14 +41,17 @@ public class BiometricSyncController {
         if (!authenticatedSerial.equals(request.deviceSerial())) {
             return ApiResponse.error("Device serial mismatch between authentication and request body");
         }
-
         return ApiResponse.success(biometricSyncService.syncEvent(request));
     }
 
     // Pulled by the bridge-agent on startup and periodically thereafter to
-    // refresh its local branch cache — this is TemplateSyncService's
-    // consumer-facing endpoint.
-    @GetMapping("/mappings")
+    // refresh its local terminalUserId -> employeeId cache. Previously
+    // called a non-existent getTemplatesForDevice() returning
+    // TemplateSyncItemResponse — that method was never implemented on
+    // BiometricEnrollmentService and didn't compile. Enrollment mapping
+    // (not fingerprint template data) is what's actually stored server-side
+    // now, so this calls the real method and returns the real type.
+    @GetMapping("/templates")
     public ApiResponse<List<DeviceMappingItemResponse>> getMappingsForMyBranch(HttpServletRequest httpRequest) {
         String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
         return ApiResponse.success(biometricEnrollmentService.getMappingsForDevice(deviceSerial));

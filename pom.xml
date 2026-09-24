@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -16,6 +16,11 @@
 
 	<properties>
 		<java.version>21</java.version>
+		<!-- Pinned explicitly: Spring Boot 4.1.0's managed Lombok version predates
+		     JDK 27 support. JDK 27 (GA 2026-09-15) requires Lombok 1.18.48+, or you
+		     will hit ExceptionInInitializerError / ClassNotFoundException on
+		     com.sun.tools.javac.tree.EndPosTable during compilation. -->
+		<lombok.version>1.18.48</lombok.version>
 	</properties>
 
 	<dependencies>
@@ -98,6 +103,7 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
+			<version>${lombok.version}</version>
 			<optional>true</optional>
 		</dependency>
 
@@ -149,10 +155,16 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
+					<!-- Required since JDK 23: javac no longer runs annotation
+					     processors by default, so Lombok would silently be skipped
+					     without this, causing "cannot find symbol" on generated
+					     getters/setters/builders. -->
+					<proc>full</proc>
 					<annotationProcessorPaths>
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
 						</path>
 					</annotationProcessorPaths>
 				</configuration>
