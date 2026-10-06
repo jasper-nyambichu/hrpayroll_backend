@@ -1,4 +1,3 @@
-// security/DeviceAuthFilter.java
 package com.company.hrpayroll.security;
 
 import com.company.hrpayroll.entity.attendance.BiometricDevice;
@@ -14,11 +13,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
-// Protects /attendance/biometric/** — these routes are permitAll() at the
-// Spring Security level (a bridge-agent has no user JWT), so this filter is
-// the only thing standing between an open endpoint and a real device check.
+// Protects /attendance/biometric/** — permitAll() at the Spring Security level (a kiosk has no
+// user JWT), so this filter is the only thing standing between the endpoint and the internet.
 @Component
 @RequiredArgsConstructor
 public class DeviceAuthFilter extends OncePerRequestFilter {
@@ -46,7 +45,7 @@ public class DeviceAuthFilter extends OncePerRequestFilter {
         String deviceToken = request.getHeader(TOKEN_HEADER);
 
         if (deviceSerial == null || deviceToken == null) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing device credentials");
+            reject(response, "Missing device credentials");
             return;
         }
 
@@ -57,11 +56,19 @@ public class DeviceAuthFilter extends OncePerRequestFilter {
                 && passwordEncoder.matches(deviceToken, deviceOpt.get().getDeviceTokenHash());
 
         if (!valid) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid device credentials");
+            reject(response, "Invalid device credentials");
             return;
         }
 
         request.setAttribute(DEVICE_SERIAL_ATTRIBUTE, deviceSerial);
         filterChain.doFilter(request, response);
+    }
+
+    // A JSON body (not sendError) so the error isn't swallowed by the secured /error dispatch.
+    private void reject(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"success\":false,\"message\":\"" + message + "\",\"data\":null}");
     }
 }

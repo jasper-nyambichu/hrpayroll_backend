@@ -1,6 +1,6 @@
-// security/JwtAuthFilter.java
 package com.company.hrpayroll.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +10,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -22,11 +23,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
-
-    @Override
-    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
-        return request.getRequestURI().startsWith("/auth/");
-    }
 
     @Override
     protected void doFilterInternal(
@@ -57,9 +53,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (Exception ex) {
+        } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
+            // Expired / malformed token or deleted user: continue unauthenticated so the
+            // security entry point answers a clean 401 (the frontend then refreshes or re-logs in)
+            // instead of an unhandled exception becoming a 500.
             SecurityContextHolder.clearContext();
-            logger.debug("Ignoring invalid JWT: " + ex.getClass().getSimpleName());
         }
 
         filterChain.doFilter(request, response);

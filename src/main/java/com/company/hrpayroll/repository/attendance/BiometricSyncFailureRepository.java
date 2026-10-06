@@ -1,7 +1,11 @@
-// repository/attendance/BiometricSyncFailureRepository.java
 package com.company.hrpayroll.repository.attendance;
 
 import com.company.hrpayroll.entity.attendance.BiometricSyncFailure;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface BiometricSyncFailureRepository extends JpaRepository<BiometricSyncFailure, Long> {}
+import java.util.List;
+
+public interface BiometricSyncFailureRepository extends JpaRepository<BiometricSyncFailure, Long> {
+
+    List<BiometricSyncFailure> findTop100ByOrderByCreatedAtDesc();
+}

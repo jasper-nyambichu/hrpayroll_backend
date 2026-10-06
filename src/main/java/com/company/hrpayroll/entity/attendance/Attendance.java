@@ -41,9 +41,13 @@ public class Attendance extends BaseEntity {
     @Column(nullable = false, length = 20)
     private String status = "PRESENT"; // PRESENT, LATE, ABSENT, OVERTIME, ON_LEAVE
 
-    // Set only when source = BIOMETRIC. Used to reject duplicate syncs.
+    // Event id of the CLOCK_IN scan (biometric only). Used to make retries idempotent.
     @Column(unique = true, length = 100)
     private String eventId;
+
+    // Event id of the CLOCK_OUT scan, so a retried clock-out is also recognised.
+    @Column(unique = true, length = 100)
+    private String clockOutEventId;
 
     private Long deviceId;
     @Column(length = 30)

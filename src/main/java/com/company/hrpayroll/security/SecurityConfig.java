@@ -1,6 +1,7 @@
 // security/SecurityConfig.java
 package com.company.hrpayroll.security;
 
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Configuration
@@ -55,6 +58,15 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated()
                 )
+                // Missing/expired token => 401 (so the frontend knows to refresh or re-login),
+                // instead of the default 403 that looks identical to "not allowed".
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, e) ->
+                                writeJson(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                        "Authentication required or your session has expired"))
+                        .accessDeniedHandler((request, response, e) ->
+                                writeJson(response, HttpServletResponse.SC_FORBIDDEN,
+                                        "You do not have permission to perform this action")))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(deviceAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -62,11 +74,16 @@ public class SecurityConfig {
         return http.build();
     }
 
+    private static void writeJson(HttpServletResponse response, int status, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"success\":false,\"message\":\"" + message + "\",\"data\":null}");
+    }
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // TODO: replace with your actual deployed frontend URL(s), e.g.
-        // "https://hrpayroll.vercel.app" or a custom domain if you set one up
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:3000",
                 "https://dhwarsh.vercel.app"

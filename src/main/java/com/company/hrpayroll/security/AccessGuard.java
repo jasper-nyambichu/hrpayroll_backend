@@ -34,12 +34,8 @@ public class AccessGuard {
         return user.getEmployeeId() != null && user.getEmployeeId().equals(employeeId);
     }
 
-    // The fix: looks up the EMPLOYEE's actual branch from the database,
-    // rather than trusting a branch ID the caller supplied. This is what
-    // closes the gap — a Branch Manager passing an arbitrary employeeId can
-    // no longer bypass scoping just because no branchId appeared in the URL.
-    // Returns false (not an exception) for an unknown employeeId, since a
-    // security check should fail closed, not leak a 404 vs 403 distinction.
+    // Looks up the EMPLOYEE's actual branch from the database rather than trusting a caller-supplied id.
+    // Fails closed (false) for an unknown employeeId.
     public boolean isEmployeeInMyBranch(Long employeeId) {
         User user = currentUser();
         if (user.getBranchId() == null) {
@@ -50,8 +46,6 @@ public class AccessGuard {
                 .orElse(false);
     }
 
-    // Same pattern for agents — used once EmployeeDocumentController and
-    // similar per-employee endpoints need agent-side scoping too.
     public boolean isEmployeeOfMyAgent(Long employeeId) {
         User user = currentUser();
         if (user.getAgentId() == null) {
@@ -70,8 +64,10 @@ public class AccessGuard {
         return currentUser().getAgentId();
     }
 
+    // FIX: this used to return the USER id, so every "my ..." endpoint (profile, attendance,
+    // leave, loans) looked up the wrong employee whenever user.id != employee.id.
     public Long currentEmployeeId() {
-        return currentUser().getId();
+        return currentUser().getEmployeeId();
     }
 
     public Long currentUserId() {
