@@ -23,6 +23,7 @@ public class NotificationController {
     private final NotificationService notificationService;
     private final AccessGuard accessGuard;
 
+    // The caller's 50 most recent notifications, newest first.
     @GetMapping
     public ApiResponse<List<NotificationResponse>> getMyNotifications() {
         return ApiResponse.success(notificationService.getNotificationsForUser(accessGuard.currentUserId()));
@@ -33,9 +34,16 @@ public class NotificationController {
         return ApiResponse.success(notificationService.getUnreadCount(accessGuard.currentUserId()));
     }
 
+    @PutMapping("/read-all")
+    public ApiResponse<Void> markAllAsRead() {
+        notificationService.markAllAsRead(accessGuard.currentUserId());
+        return ApiResponse.success("All marked as read", null);
+    }
+
+    // Scoped to the caller — marking someone else's notification is a 404.
     @PutMapping("/{notificationId}/read")
     public ApiResponse<Void> markAsRead(@PathVariable Long notificationId) {
-        notificationService.markAsRead(notificationId);
+        notificationService.markAsRead(accessGuard.currentUserId(), notificationId);
         return ApiResponse.success("Marked as read", null);
     }
 }

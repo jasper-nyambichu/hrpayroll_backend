@@ -20,6 +20,9 @@ import java.util.stream.Collectors;
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
+    // notifications.message is VARCHAR(255).
+    private static final int MAX_MESSAGE_LENGTH = 255;
+
     private final Map<String, NotificationSender> sendersByChannel;
     private final NotificationRepository notificationRepository;
     private final NotificationMapper notificationMapper;
@@ -51,22 +54,56 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    public void notifyInApp(Long recipientUserId, String type, String message, Long referenceId) {
+        notificationRepository.save(Notification.builder()
+                .recipientUserId(recipientUserId)
+                .channel("IN_APP")
+                .type(type)
+                .message(truncate(message))
+                .referenceId(referenceId)
+                .read(false)
+                .build());
+    }
+
+    @Override
+    public void resolveByReference(String type, Long referenceId) {
+        List<Notification> open = notificationRepository.findByTypeAndReferenceIdAndReadFalse(type, referenceId);
+        open.forEach(n -> n.setRead(true));
+        notificationRepository.saveAll(open);
+    }
+
+    @Override
     public List<NotificationResponse> getNotificationsForUser(Long userId) {
-        return notificationRepository.findByRecipientUserId(userId).stream()
+        return notificationRepository.findTop50ByRecipientUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(notificationMapper::toNotificationResponse)
                 .toList();
     }
 
     @Override
-    public void markAsRead(Long notificationId) {
+    public void markAsRead(Long userId, Long notificationId) {
         Notification notification = notificationRepository.findById(notificationId)
+                // Someone else's notification looks exactly like a missing one.
+                .filter(n -> n.getRecipientUserId().equals(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("Notification not found with id: " + notificationId));
         notification.setRead(true);
         notificationRepository.save(notification);
     }
 
     @Override
+    public void markAllAsRead(Long userId) {
+        List<Notification> unread = notificationRepository.findByRecipientUserIdAndReadFalse(userId);
+        unread.forEach(n -> n.setRead(true));
+        notificationRepository.saveAll(unread);
+    }
+
+    @Override
     public long getUnreadCount(Long userId) {
         return notificationRepository.countByRecipientUserIdAndReadFalse(userId);
+    }
+
+    private String truncate(String message) {
+        return message.length() <= MAX_MESSAGE_LENGTH
+                ? message
+                : message.substring(0, MAX_MESSAGE_LENGTH - 1) + "…";
     }
 }

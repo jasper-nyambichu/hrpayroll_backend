@@ -14,5 +14,11 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     List<Notification> findByRecipientUserId(Long recipientUserId);
 
+    // The bell shows the latest 50, newest first.
+    List<Notification> findTop50ByRecipientUserIdOrderByCreatedAtDesc(Long recipientUserId);
+
+    // Every unread notification about one record, for every recipient.
+    List<Notification> findByTypeAndReferenceIdAndReadFalse(String type, Long referenceId);
+
     long countByRecipientUserIdAndReadFalse(Long recipientUserId);
 }

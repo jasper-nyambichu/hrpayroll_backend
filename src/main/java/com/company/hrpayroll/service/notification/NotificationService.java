@@ -11,7 +11,20 @@ public interface NotificationService {
     // listeners below).
     void notify(Long recipientUserId, String type, String message, List<String> channels);
 
+    // In-app only, with a type and the record it is about, so the bell can link to
+    // it and it can be cleared later (see resolveByReference).
+    void notifyInApp(Long recipientUserId, String type, String message, Long referenceId);
+
+    // Marks every unread notification of this type about this record as read, for
+    // every recipient. Used when the thing they were notified about is decided.
+    void resolveByReference(String type, Long referenceId);
+
     List<NotificationResponse> getNotificationsForUser(Long userId);
-    void markAsRead(Long notificationId);
+
+    // Scoped to the caller: a user can only mark their own notifications.
+    void markAsRead(Long userId, Long notificationId);
+
+    void markAllAsRead(Long userId);
+
     long getUnreadCount(Long userId);
 }

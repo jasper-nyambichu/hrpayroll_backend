@@ -25,10 +25,14 @@ public class Notification extends BaseEntity {
     private String channel; // EMAIL, SMS, IN_APP
 
     @Column(nullable = false, length = 50)
-    private String type; // LEAVE_APPROVED, PAYROLL_COMPLETED, PAYSLIP_AVAILABLE, LOAN_APPROVED, ATTENDANCE_ALERT
+    private String type; // LEAVE_APPROVED, PAYROLL_COMPLETED, EMPLOYEE_REQUEST_SUBMITTED, ...
 
     @Column(nullable = false)
     private String message;
+
+    // The record this notification is about (e.g. an employee_creation_requests id).
+    // Null for notifications that are not about a specific record.
+    private Long referenceId;
 
     @Builder.Default
     @Column(nullable = false)

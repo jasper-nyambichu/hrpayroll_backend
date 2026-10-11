@@ -9,5 +9,6 @@ public record NotificationResponse(
         String type,
         String message,
         boolean read,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Long referenceId
 ) {}

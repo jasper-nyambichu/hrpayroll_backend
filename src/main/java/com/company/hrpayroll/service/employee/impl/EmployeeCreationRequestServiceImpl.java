@@ -4,6 +4,7 @@ package com.company.hrpayroll.service.employee.impl;
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
 import com.company.hrpayroll.dto.response.employee.EmployeeCreationRequestResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
+import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.department.Department;
@@ -20,6 +21,7 @@ import com.company.hrpayroll.repository.employee.EmployeeCreationRequestReposito
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.service.employee.EmployeeCreationRequestService;
 import com.company.hrpayroll.service.employee.EmployeeService;
+import com.company.hrpayroll.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,13 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
     private final AgentRepository agentRepository;
     private final UserRepository userRepository;
     private final EmployeeService employeeService;
+    private final NotificationService notificationService;
+
+    // Notification types for this workflow. The bell links on these, so the
+    // frontend (notification-bell.tsx) keys on the same strings.
+    private static final String TYPE_SUBMITTED = "EMPLOYEE_REQUEST_SUBMITTED"; // -> admins
+    private static final String TYPE_APPROVED = "EMPLOYEE_REQUEST_APPROVED";   // -> HR
+    private static final String TYPE_REJECTED = "EMPLOYEE_REQUEST_REJECTED";   // -> HR
 
     @Override
     public EmployeeCreationRequestResponse submit(EmployeeRequest request, Long requestedByUserId) {
@@ -73,6 +82,14 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         }
 
         EmployeeCreationRequest saved = requestRepository.save(toEntity(request, requestedByUserId));
+
+        // Tell every active admin there is something to review.
+        String branchName = branchRepository.findById(request.branchId()).map(Branch::getName).orElse("a branch");
+        String message = userName(requestedByUserId) + " requested to add " + request.fullName()
+                + " (" + branchName + "). Review and approve.";
+        adminUsers().forEach(admin ->
+                notificationService.notifyInApp(admin.getId(), TYPE_SUBMITTED, message, saved.getId()));
+
         return toResponse(saved);
     }
 
@@ -109,7 +126,17 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         entity.setReviewedByUserId(reviewerUserId);
         entity.setReviewedAt(LocalDateTime.now());
         entity.setCreatedEmployeeId(employee.id());
-        return toResponse(requestRepository.save(entity));
+        EmployeeCreationRequest saved = requestRepository.save(entity);
+
+        // The admins' "needs review" notifications are done — clear them — and
+        // HR is told the outcome.
+        notificationService.resolveByReference(TYPE_SUBMITTED, id);
+        notificationService.notifyInApp(saved.getRequestedByUserId(), TYPE_APPROVED,
+                "Approved by " + userName(reviewerUserId) + ": " + employee.fullName()
+                        + " was added as " + employee.employeeNumber() + ".",
+                id);
+
+        return toResponse(saved);
     }
 
     @Override
@@ -121,7 +148,15 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         entity.setReviewedByUserId(reviewerUserId);
         entity.setReviewedAt(LocalDateTime.now());
         entity.setRejectionReason(reason);
-        return toResponse(requestRepository.save(entity));
+        EmployeeCreationRequest saved = requestRepository.save(entity);
+
+        notificationService.resolveByReference(TYPE_SUBMITTED, id);
+        notificationService.notifyInApp(saved.getRequestedByUserId(), TYPE_REJECTED,
+                "Rejected by " + userName(reviewerUserId) + ": " + entity.getFullName()
+                        + " — " + reason,
+                id);
+
+        return toResponse(saved);
     }
 
     // ---- helpers ----
@@ -201,6 +236,15 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
                 departmentName,
                 agentName,
                 toEmployeeRequest(e));
+    }
+
+    // Everyone who can approve: active ADMIN and SUPER_ADMIN accounts.
+    private List<User> adminUsers() {
+        return java.util.stream.Stream.concat(
+                        userRepository.findByRole(Role.ADMIN).stream(),
+                        userRepository.findByRole(Role.SUPER_ADMIN).stream())
+                .filter(User::isActive)
+                .toList();
     }
 
     private String userName(Long userId) {
