@@ -49,15 +49,17 @@ public class BranchController {
 
     // Convenience endpoint so the Branch Manager frontend doesn't need to
     // already know its own branch ID before it can call anything.
-     // add to constructor via @RequiredArgsConstructor
+    // add to constructor via @RequiredArgsConstructor
 
     @GetMapping("/my-branch")
     @PreAuthorize("hasRole('BRANCH_MANAGER')")
     public ApiResponse<BranchResponse> getMyBranch() {
         return ApiResponse.success(branchService.getBranchById(accessGuard.currentBranchId()));
     }
+
+    // HR_MANAGER needs this list to choose a branch on the Add Employee form.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
     public ApiResponse<List<BranchResponse>> getAllBranches() {
         return ApiResponse.success(branchService.getAllBranches());
     }

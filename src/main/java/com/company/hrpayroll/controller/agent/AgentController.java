@@ -1,4 +1,4 @@
-// controller/agent/AgentController.java — corrected, full file
+// controller/agent/AgentController.java
 
 package com.company.hrpayroll.controller.agent;
 
@@ -51,8 +51,9 @@ public class AgentController {
         return ApiResponse.success(agentService.getAgentById(accessGuard.currentAgentId()));
     }
 
+    // HR_MANAGER needs this list to assign an agent on the Add Employee form.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'HR_MANAGER')")
     public ApiResponse<List<AgentResponse>> getAllAgents() {
         return ApiResponse.success(agentService.getAllAgents());
     }

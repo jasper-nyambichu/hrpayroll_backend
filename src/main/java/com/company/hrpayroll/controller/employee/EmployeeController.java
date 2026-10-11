@@ -23,8 +23,10 @@ public class EmployeeController {
     private final EmployeeService employeeService;
     private final AccessGuard accessGuard;
 
+    // HR_MANAGER no longer creates employees directly — HR submits a request via
+    // POST /employee-requests and an Admin approves it (see EmployeeCreationRequestController).
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     @Auditable(action = "EMPLOYEE_CREATED", entityType = "Employee")
     public ApiResponse<EmployeeResponse> createEmployee(@Valid @RequestBody EmployeeRequest request) {
         return ApiResponse.success("Employee created", employeeService.createEmployee(request));
