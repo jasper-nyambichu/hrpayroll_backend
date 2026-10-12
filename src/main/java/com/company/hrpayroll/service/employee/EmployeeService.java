@@ -15,4 +15,5 @@ public interface EmployeeService {
     List<EmployeeSummaryResponse> getEmployeesByAgent(Long agentId);
     List<EmployeeSummaryResponse> getEmployeesByDepartment(Long departmentId);
     void terminateEmployee(Long id);
+    void deleteEmployee(Long id);
 }

@@ -82,6 +82,14 @@ public class EmployeeController {
         return ApiResponse.success(employeeService.getEmployeeById(accessGuard.currentEmployeeId()));
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Auditable(action = "EMPLOYEE_DELETED", entityType = "Employee")
+    public ApiResponse<Void> deleteEmployee(@PathVariable Long id) {
+        employeeService.deleteEmployee(id);
+        return ApiResponse.success("Employee deleted", null);
+    }
+
     @PutMapping("/{id}/terminate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
     @Auditable(action = "EMPLOYEE_TERMINATED", entityType = "Employee")

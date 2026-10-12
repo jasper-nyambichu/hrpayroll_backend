@@ -92,6 +92,12 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeRepository.save(employee);
     }
 
+    @Override
+    public void deleteEmployee(Long id) {
+        findEmployeeOrThrow(id);
+        employeeRepository.deleteById(id);
+    }
+
     // ---- validation helpers ----
 
     private Branch validateAndFetchBranch(Long branchId) {
