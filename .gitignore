@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local secrets and database backups
+.env
+hrpayroll.dump
+local-db-backup.sql
