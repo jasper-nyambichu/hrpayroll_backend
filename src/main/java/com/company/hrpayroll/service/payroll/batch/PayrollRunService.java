@@ -13,4 +13,7 @@ public interface PayrollRunService {
     PayrollRunResponse getRunById(Long payrollRunId);
     List<PayslipResponse> getPayslipsForRun(Long payrollRunId);
     List<AgentPayrollSummaryResponse> getAgentSummariesForRun(Long payrollRunId);
+
+    // One agent's summaries across every run, newest period first — backs the Agent Portal statements.
+    List<AgentPayrollSummaryResponse> getAgentSummariesForAgent(Long agentId);
 }

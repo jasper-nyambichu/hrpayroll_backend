@@ -90,19 +90,24 @@ public class AgentPayrollCalculationServiceImpl implements AgentPayrollCalculati
                 .build();
     }
 
+    // Charge amount / percentage are nullable columns (only one of them is
+    // used per charge type), so a missing value is treated as zero rather
+    // than letting a legacy row abort the whole payroll run with an NPE.
     private BigDecimal calculateServiceCharge(Agent agent, int employeeCount, BigDecimal grossSalaries) {
         ChargeType type = agent.getChargeType();
+        BigDecimal chargeAmount = agent.getChargeAmount() != null ? agent.getChargeAmount() : BigDecimal.ZERO;
+        BigDecimal chargePercentage = agent.getChargePercentage() != null ? agent.getChargePercentage() : BigDecimal.ZERO;
 
         return switch (type) {
-            case PER_EMPLOYEE -> agent.getChargeAmount()
+            case PER_EMPLOYEE -> chargeAmount
                     .multiply(BigDecimal.valueOf(employeeCount))
                     .setScale(2, RoundingMode.HALF_UP);
 
             case PERCENTAGE_OF_GROSS -> grossSalaries
-                    .multiply(agent.getChargePercentage())
+                    .multiply(chargePercentage)
                     .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
 
-            case FIXED_MONTHLY, CUSTOM -> agent.getChargeAmount().setScale(2, RoundingMode.HALF_UP);
+            case FIXED_MONTHLY, CUSTOM -> chargeAmount.setScale(2, RoundingMode.HALF_UP);
         };
     }
 

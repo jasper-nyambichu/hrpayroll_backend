@@ -61,6 +61,22 @@ public class PayrollController {
         return ApiResponse.success(payrollRunService.getAgentSummariesForRun(runId));
     }
 
+    // One agent's payment statements across every run. Staff with the read
+    // roles can view any agent's; an agent only their own, via isSameAgent —
+    // same pattern as /agent-advances/by-agent/{agentId}.
+    @GetMapping("/agents/{agentId}/summaries")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isSameAgent(#agentId)")
+    public ApiResponse<List<AgentPayrollSummaryResponse>> getSummariesByAgent(@PathVariable Long agentId) {
+        return ApiResponse.success(payrollRunService.getAgentSummariesForAgent(agentId));
+    }
+
+    // Agent Portal convenience endpoint — same /me pattern as AgentController.
+    @GetMapping("/my-agent-summaries")
+    @PreAuthorize("hasRole('AGENT')")
+    public ApiResponse<List<AgentPayrollSummaryResponse>> getMyAgentSummaries() {
+        return ApiResponse.success(payrollRunService.getAgentSummariesForAgent(accessGuard.currentAgentId()));
+    }
+
     // The three document downloads from proposal §6.4. Staff with the read
     // roles above can pull any agent's documents; an agent logged into
     // their own portal can only pull their own, via isSameAgent — same

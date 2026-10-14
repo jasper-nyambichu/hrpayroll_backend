@@ -1,29 +1,33 @@
 // service/payroll/documents/impl/AgentInvoiceGeneratorImpl.java
 package com.company.hrpayroll.service.payroll.documents.impl;
 
+import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.dto.response.payroll.GeneratedDocument;
 import com.company.hrpayroll.entity.agent.Agent;
 import com.company.hrpayroll.entity.payroll.AgentPayrollSummary;
 import com.company.hrpayroll.entity.payroll.PayrollRun;
 import com.company.hrpayroll.service.payroll.documents.AgentInvoiceGenerator;
 import com.company.hrpayroll.service.payroll.documents.support.PdfDocumentWriter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.time.LocalDate;
 
 import static com.company.hrpayroll.service.payroll.documents.support.AmountFormatter.format;
 
 @Service
+@RequiredArgsConstructor
 public class AgentInvoiceGeneratorImpl implements AgentInvoiceGenerator {
+
+    private final BusinessClock businessClock;
 
     @Override
     public GeneratedDocument generate(AgentPayrollSummary summary, Agent agent, PayrollRun run) {
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
 
             writer.title("Agent Invoice");
-            writer.subtitle("Invoice date: " + LocalDate.now());
+            writer.subtitle("Invoice date: " + businessClock.today());
             writer.subtitle("Agent KRA PIN: " + (agent.getKraPin() != null ? agent.getKraPin() : "-"));
             writer.divider();
 

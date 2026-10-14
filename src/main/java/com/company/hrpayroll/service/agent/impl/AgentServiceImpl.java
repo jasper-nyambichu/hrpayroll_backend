@@ -9,10 +9,12 @@ import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.agent.AgentMapper;
 import com.company.hrpayroll.repository.agent.AgentRepository;
+import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.service.agent.AgentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -22,11 +24,13 @@ public class AgentServiceImpl implements AgentService {
 
     private final AgentRepository agentRepository;
     private final EmployeeRepository employeeRepository;
+    private final UserRepository userRepository;
     private final AgentMapper agentMapper;
 
     @Override
     public AgentResponse createAgent(AgentRequest request) {
         validateChargeConfiguration(request);
+        validateTaxAndContract(request);
 
         Agent agent = agentMapper.toAgent(request);
         Agent saved = agentRepository.save(agent);
@@ -36,6 +40,7 @@ public class AgentServiceImpl implements AgentService {
     @Override
     public AgentResponse updateAgent(Long id, AgentRequest request) {
         validateChargeConfiguration(request);
+        validateTaxAndContract(request);
 
         Agent agent = findAgentOrThrow(id);
         agentMapper.updateAgentFromRequest(agent, request);
@@ -63,10 +68,18 @@ public class AgentServiceImpl implements AgentService {
     }
 
     @Override
+    @Transactional
     public void deactivateAgent(Long id) {
         Agent agent = findAgentOrThrow(id);
         agent.setStatus("INACTIVE");
         agentRepository.save(agent);
+
+        // A deactivated agent must not keep access to the Agent Portal —
+        // disabling the linked login blocks authentication for it.
+        userRepository.findByAgentId(id).ifPresent(user -> {
+            user.setActive(false);
+            userRepository.save(user);
+        });
     }
 
     // The charge type determines which amount field is actually required —
@@ -85,6 +98,22 @@ public class AgentServiceImpl implements AgentService {
                 throw new InvalidOperationException(
                         "Charge amount is required for charge type " + type);
             }
+        }
+    }
+
+    // A VAT-registered agent's invoice is a tax document, so it must carry
+    // the agent's KRA PIN; and a contract can't end before it starts.
+    private void validateTaxAndContract(AgentRequest request) {
+        if (request.vatRegistered()
+                && (request.kraPin() == null || request.kraPin().isBlank())) {
+            throw new InvalidOperationException(
+                    "KRA PIN is required for a VAT-registered agent");
+        }
+
+        if (request.contractStartDate() != null && request.contractEndDate() != null
+                && request.contractEndDate().isBefore(request.contractStartDate())) {
+            throw new InvalidOperationException(
+                    "Contract end date cannot be before contract start date");
         }
     }
 

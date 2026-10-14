@@ -146,16 +146,30 @@ public class PayrollRunServiceImpl implements PayrollRunService {
 
     @Override
     public List<AgentPayrollSummaryResponse> getAgentSummariesForRun(Long payrollRunId) {
+        PayrollRun run = findRunOrThrow(payrollRunId);
         return agentPayrollSummaryRepository.findByPayrollRunId(payrollRunId).stream()
-                .map(summary -> {
-                    String agentName = agentRepository.findById(summary.getAgentId())
-                            .map(Agent::getName).orElse(null);
-                    return agentPayrollSummaryMapper.toAgentPayrollSummaryResponse(summary, agentName);
+                .map(summary -> toAgentSummaryResponse(summary, run))
+                .toList();
+    }
+
+    @Override
+    public List<AgentPayrollSummaryResponse> getAgentSummariesForAgent(Long agentId) {
+        return agentPayrollSummaryRepository.findByAgentId(agentId).stream()
+                .map(summary -> toAgentSummaryResponse(summary, findRunOrThrow(summary.getPayrollRunId())))
+                .sorted((a, b) -> {
+                    int byPeriod = b.periodEnd().compareTo(a.periodEnd());
+                    return byPeriod != 0 ? byPeriod : b.id().compareTo(a.id());
                 })
                 .toList();
     }
 
     // ---- orchestration helpers ----
+
+    private AgentPayrollSummaryResponse toAgentSummaryResponse(AgentPayrollSummary summary, PayrollRun run) {
+        String agentName = agentRepository.findById(summary.getAgentId())
+                .map(Agent::getName).orElse(null);
+        return agentPayrollSummaryMapper.toAgentPayrollSummaryResponse(summary, agentName, run);
+    }
 
     private void applyLoanDeductionsFor(Employee employee, PayrollRun run) {
         loanService.getActiveDeductionsForEmployees(List.of(employee.getId()))

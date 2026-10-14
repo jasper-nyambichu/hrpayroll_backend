@@ -23,11 +23,12 @@ public class AgentAdvanceController {
     private final AgentAdvanceService agentAdvanceService;
     private final AccessGuard accessGuard;
 
-    // Recording and manually recovering advances is a finance operation —
+    // Recording and manually recovering advances is a Payroll Officer
+    // operation (proposal §4) — Finance Officer / Auditor are read-only and
     // agents can view their own advances (below) but never create or
     // recover one themselves.
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER')")
     @Auditable(action = "AGENT_ADVANCE_RECORDED", entityType = "AgentAdvance")
     public ApiResponse<AgentAdvanceResponse> recordAdvance(@Valid @RequestBody AgentAdvanceRequest request) {
         return ApiResponse.success("Advance recorded", agentAdvanceService.recordAdvance(request));
@@ -37,7 +38,7 @@ public class AgentAdvanceController {
     // directly) — automatic recovery during payroll runs happens inside
     // PayrollRunServiceImpl and never touches this endpoint.
     @PutMapping("/{advanceId}/recover")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER')")
     @Auditable(action = "AGENT_ADVANCE_RECOVERED", entityType = "AgentAdvance")
     public ApiResponse<AgentAdvanceResponse> recoverAmount(
             @PathVariable Long advanceId, @Valid @RequestBody AgentAdvanceRecoveryRequest request
@@ -46,7 +47,7 @@ public class AgentAdvanceController {
     }
 
     @GetMapping("/by-agent/{agentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER') or @accessGuard.isSameAgent(#agentId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR') or @accessGuard.isSameAgent(#agentId)")
     public ApiResponse<List<AgentAdvanceResponse>> getAdvancesByAgent(@PathVariable Long agentId) {
         return ApiResponse.success(agentAdvanceService.getAdvancesByAgent(agentId));
     }
