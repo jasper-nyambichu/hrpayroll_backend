@@ -50,6 +50,11 @@ public class Payslip extends BaseEntity {
     @Column(precision = 15, scale = 2)
     private BigDecimal otherAllowances = BigDecimal.ZERO;
 
+    // Already taken out of grossPay (approved leave of a type with paid = false).
+    @Builder.Default
+    @Column(precision = 15, scale = 2)
+    private BigDecimal unpaidLeaveDeduction = BigDecimal.ZERO;
+
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal grossPay;
 
@@ -66,6 +71,7 @@ public class Payslip extends BaseEntity {
     @Column(precision = 15, scale = 2)
     private BigDecimal payeDeduction;
 
+    // Employer-borne NITA levy — recorded for remittance, NOT deducted from netPay.
     @Column(precision = 15, scale = 2)
     private BigDecimal nitaDeduction;
 

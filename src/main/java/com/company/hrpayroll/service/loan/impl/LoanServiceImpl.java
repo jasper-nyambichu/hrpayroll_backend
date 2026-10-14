@@ -1,7 +1,9 @@
 // service/loan/impl/LoanServiceImpl.java
 package com.company.hrpayroll.service.loan.impl;
 
+import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.dto.request.loan.LoanRequest;
+import com.company.hrpayroll.dto.response.loan.LoanRepaymentResponse;
 import com.company.hrpayroll.dto.response.loan.LoanResponse;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.loan.Loan;
@@ -17,7 +19,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -28,6 +29,7 @@ public class LoanServiceImpl implements LoanService {
     private final LoanRepaymentRepository loanRepaymentRepository;
     private final EmployeeRepository employeeRepository;
     private final LoanMapper loanMapper;
+    private final BusinessClock businessClock;
 
     @Override
     public LoanResponse requestLoan(LoanRequest request) {
@@ -36,7 +38,15 @@ public class LoanServiceImpl implements LoanService {
         }
 
         Loan loan = loanMapper.toLoan(request);
-        loan.setRequestDate(LocalDate.now());
+
+        // The loan starts owing principal + interest, so an installment larger
+        // than that could never be deducted as stated.
+        if (loan.getInstallmentAmount().compareTo(loan.getOutstandingBalance()) > 0) {
+            throw new InvalidOperationException(
+                    "Installment amount cannot exceed the total repayable amount of " + loan.getOutstandingBalance());
+        }
+
+        loan.setRequestDate(businessClock.today());
         Loan saved = loanRepository.save(loan);
         return toResponseWithEmployeeName(saved);
     }
@@ -48,7 +58,7 @@ public class LoanServiceImpl implements LoanService {
             throw new InvalidOperationException("Only pending loans can be approved");
         }
         loan.setStatus("APPROVED");
-        loan.setApprovalDate(LocalDate.now());
+        loan.setApprovalDate(businessClock.today());
         Loan saved = loanRepository.save(loan);
         return toResponseWithEmployeeName(saved);
     }
@@ -68,6 +78,32 @@ public class LoanServiceImpl implements LoanService {
     public List<LoanResponse> getLoansForEmployee(Long employeeId) {
         return loanRepository.findByEmployeeId(employeeId).stream()
                 .map(this::toResponseWithEmployeeName)
+                .toList();
+    }
+
+    @Override
+    public List<LoanResponse> getAllLoans(String status) {
+        List<Loan> loans = (status == null || status.isBlank())
+                ? loanRepository.findAll()
+                : loanRepository.findByStatus(status.trim().toUpperCase());
+
+        return loans.stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                .map(this::toResponseWithEmployeeName)
+                .toList();
+    }
+
+    @Override
+    public LoanResponse getLoanById(Long loanId) {
+        return toResponseWithEmployeeName(findOrThrow(loanId));
+    }
+
+    @Override
+    public List<LoanRepaymentResponse> getRepaymentsForLoan(Long loanId) {
+        findOrThrow(loanId);
+        return loanRepaymentRepository.findByLoanId(loanId).stream()
+                .sorted((a, b) -> a.getId().compareTo(b.getId()))
+                .map(loanMapper::toLoanRepaymentResponse)
                 .toList();
     }
 

@@ -28,8 +28,12 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
 
     @Override
     public AgentAdvanceResponse recordAdvance(AgentAdvanceRequest request) {
-        if (!agentRepository.existsById(request.agentId())) {
-            throw new ResourceNotFoundException("Agent not found with id: " + request.agentId());
+        Agent agent = agentRepository.findById(request.agentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found with id: " + request.agentId()));
+
+        // Money must not go out to a deactivated agent.
+        if ("INACTIVE".equals(agent.getStatus())) {
+            throw new InvalidOperationException("Cannot record an advance for an inactive agent");
         }
 
         AgentAdvance advance = agentAdvanceMapper.toAgentAdvance(request);
@@ -50,6 +54,19 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
         return agentAdvanceRepository.findByAgentId(agentId).stream()
                 .map(this::toResponseWithAgentName)
                 .toList();
+    }
+
+    @Override
+    public List<AgentAdvanceResponse> getAllAdvances() {
+        return agentAdvanceRepository.findAll().stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                .map(this::toResponseWithAgentName)
+                .toList();
+    }
+
+    @Override
+    public AgentAdvanceResponse getAdvanceById(Long advanceId) {
+        return toResponseWithAgentName(findAdvanceOrThrow(advanceId));
     }
 
     @Override

@@ -6,11 +6,13 @@ import com.company.hrpayroll.dto.response.payroll.AgentPayrollSummaryResponse;
 import com.company.hrpayroll.dto.response.payroll.PayrollRunResponse;
 import com.company.hrpayroll.dto.response.payroll.PayslipResponse;
 import com.company.hrpayroll.entity.agent.Agent;
+import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.payroll.AgentPayrollSummary;
 import com.company.hrpayroll.entity.payroll.PayrollRun;
 import com.company.hrpayroll.entity.payroll.PayrollRunStatus;
 import com.company.hrpayroll.entity.payroll.Payslip;
+import com.company.hrpayroll.event.PayrollCompletedEvent;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.PayrollRunInProgressException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
@@ -18,6 +20,7 @@ import com.company.hrpayroll.mapper.payroll.AgentPayrollSummaryMapper;
 import com.company.hrpayroll.mapper.payroll.PayrollRunMapper;
 import com.company.hrpayroll.mapper.payroll.PayslipMapper;
 import com.company.hrpayroll.repository.agent.AgentRepository;
+import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.payroll.AgentPayrollSummaryRepository;
 import com.company.hrpayroll.repository.payroll.PayrollRunRepository;
@@ -29,6 +32,7 @@ import com.company.hrpayroll.service.payroll.batch.PayrollLockService;
 import com.company.hrpayroll.service.payroll.batch.PayrollRunService;
 import com.company.hrpayroll.service.payroll.engine.PayrollCalculationService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +52,7 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     private final AgentPayrollSummaryRepository agentPayrollSummaryRepository;
     private final EmployeeRepository employeeRepository;
     private final AgentRepository agentRepository;
+    private final UserRepository userRepository;
 
     private final PayrollCalculationService payrollCalculationService;
     private final AgentPayrollCalculationService agentPayrollCalculationService;
@@ -59,6 +64,7 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     private final AgentPayrollSummaryMapper agentPayrollSummaryMapper;
 
     private final PayrollLockService payrollLockService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // Single transaction: the whole run either commits completely, or none
     // of it is saved — no PayrollRun row is left in a half-finished state,
@@ -87,6 +93,10 @@ public class PayrollRunServiceImpl implements PayrollRunService {
         if (employees.isEmpty()) {
             throw new InvalidOperationException("No active employees match the selected payroll scope");
         }
+
+        // The lock above makes this check race-free: nobody else can be creating
+        // a run while we look for periods that were already paid.
+        rejectOverlappingPayroll(employees, request);
 
         PayrollRun run = PayrollRun.builder()
                 .periodStart(request.periodStart())
@@ -122,6 +132,10 @@ public class PayrollRunServiceImpl implements PayrollRunService {
         run.setStatus(PayrollRunStatus.COMPLETED);
         run = payrollRunRepository.save(run);
 
+        // 4. Tell employees their payslips are ready. The listener runs only AFTER
+        //    this transaction commits, so nobody is notified about a run that rolled back.
+        publishPayrollCompleted(run, employees);
+
         return payrollRunMapper.toPayrollRunResponse(run, payslips.size(), agentSummaries.size());
     }
 
@@ -134,12 +148,37 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     }
 
     @Override
+    public List<PayrollRunResponse> getAllRuns() {
+        return payrollRunRepository.findAllByOrderByPeriodEndDescIdDesc().stream()
+                .map(run -> payrollRunMapper.toPayrollRunResponse(
+                        run,
+                        payslipRepository.findByPayrollRunId(run.getId()).size(),
+                        agentPayrollSummaryRepository.findByPayrollRunId(run.getId()).size()))
+                .toList();
+    }
+
+    @Override
     public List<PayslipResponse> getPayslipsForRun(Long payrollRunId) {
+        PayrollRun run = findRunOrThrow(payrollRunId);
         return payslipRepository.findByPayrollRunId(payrollRunId).stream()
-                .map(payslip -> {
-                    String employeeName = employeeRepository.findById(payslip.getEmployeeId())
-                            .map(Employee::getFullName).orElse(null);
-                    return payslipMapper.toPayslipResponse(payslip, employeeName);
+                .map(payslip -> toPayslipResponse(payslip, run))
+                .toList();
+    }
+
+    @Override
+    public PayslipResponse getPayslipById(Long payslipId) {
+        Payslip payslip = payslipRepository.findById(payslipId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payslip not found with id: " + payslipId));
+        return toPayslipResponse(payslip, findRunOrThrow(payslip.getPayrollRunId()));
+    }
+
+    @Override
+    public List<PayslipResponse> getPayslipsForEmployee(Long employeeId) {
+        return payslipRepository.findByEmployeeId(employeeId).stream()
+                .map(payslip -> toPayslipResponse(payslip, findRunOrThrow(payslip.getPayrollRunId())))
+                .sorted((a, b) -> {
+                    int byPeriod = b.periodEnd().compareTo(a.periodEnd());
+                    return byPeriod != 0 ? byPeriod : b.id().compareTo(a.id());
                 })
                 .toList();
     }
@@ -165,10 +204,48 @@ public class PayrollRunServiceImpl implements PayrollRunService {
 
     // ---- orchestration helpers ----
 
+    private PayslipResponse toPayslipResponse(Payslip payslip, PayrollRun run) {
+        Employee employee = employeeRepository.findById(payslip.getEmployeeId()).orElse(null);
+        return payslipMapper.toPayslipResponse(payslip, employee, run);
+    }
+
     private AgentPayrollSummaryResponse toAgentSummaryResponse(AgentPayrollSummary summary, PayrollRun run) {
         String agentName = agentRepository.findById(summary.getAgentId())
                 .map(Agent::getName).orElse(null);
         return agentPayrollSummaryMapper.toAgentPayrollSummaryResponse(summary, agentName, run);
+    }
+
+    // An employee who already has a payslip in a completed run whose period
+    // overlaps this one would be paid twice (and an agent billed twice).
+    private void rejectOverlappingPayroll(List<Employee> employees, PayrollRunRequest request) {
+        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
+
+        Set<Long> alreadyPaid = new HashSet<>(payslipRepository.findEmployeeIdsPaidForOverlappingPeriod(
+                employeeIds, request.periodStart(), request.periodEnd()));
+
+        if (alreadyPaid.isEmpty()) {
+            return;
+        }
+
+        String examples = employees.stream()
+                .filter(employee -> alreadyPaid.contains(employee.getId()))
+                .limit(3)
+                .map(Employee::getEmployeeNumber)
+                .collect(Collectors.joining(", "));
+
+        throw new InvalidOperationException(
+                alreadyPaid.size() + " employee(s) already have a payslip for a payroll run overlapping "
+                        + request.periodStart() + " to " + request.periodEnd()
+                        + " (e.g. " + examples + "). Choose a different period or scope.");
+    }
+
+    private void publishPayrollCompleted(PayrollRun run, List<Employee> employees) {
+        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
+        List<Long> userIds = userRepository.findByEmployeeIdIn(employeeIds).stream()
+                .map(User::getId)
+                .toList();
+
+        eventPublisher.publishEvent(new PayrollCompletedEvent(run.getId(), userIds));
     }
 
     private void applyLoanDeductionsFor(Employee employee, PayrollRun run) {

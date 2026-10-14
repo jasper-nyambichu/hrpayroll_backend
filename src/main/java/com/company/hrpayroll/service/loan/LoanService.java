@@ -2,6 +2,7 @@
 package com.company.hrpayroll.service.loan;
 
 import com.company.hrpayroll.dto.request.loan.LoanRequest;
+import com.company.hrpayroll.dto.response.loan.LoanRepaymentResponse;
 import com.company.hrpayroll.dto.response.loan.LoanResponse;
 
 import java.math.BigDecimal;
@@ -12,6 +13,12 @@ public interface LoanService {
     LoanResponse approveLoan(Long loanId);
     LoanResponse rejectLoan(Long loanId);
     List<LoanResponse> getLoansForEmployee(Long employeeId);
+
+    // Company-wide list for Payroll / Finance / Audit screens; status is optional
+    // (PENDING, APPROVED, REJECTED, CLOSED). Newest first.
+    List<LoanResponse> getAllLoans(String status);
+    LoanResponse getLoanById(Long loanId);
+    List<LoanRepaymentResponse> getRepaymentsForLoan(Long loanId);
 
     // Called by payroll/engine during a run — not exposed via a controller.
     List<LoanDeductionResult> getActiveDeductionsForEmployees(List<Long> employeeIds);

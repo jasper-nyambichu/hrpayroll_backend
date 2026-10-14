@@ -22,5 +22,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmployeeId(Long employeeId);
 
+    // Login accounts for a set of employees — used to address payslip notifications.
+    List<User> findByEmployeeIdIn(List<Long> employeeIds);
+
     Optional<User> findByAgentId(Long agentId);
 }

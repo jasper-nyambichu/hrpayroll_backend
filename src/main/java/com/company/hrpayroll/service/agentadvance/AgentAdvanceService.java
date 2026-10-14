@@ -13,6 +13,10 @@ public interface AgentAdvanceService {
     AgentAdvanceResponse recoverAmount(Long advanceId, AgentAdvanceRecoveryRequest request);
     List<AgentAdvanceResponse> getAdvancesByAgent(Long agentId);
 
+    // Company-wide list (newest first) and single record, for Payroll / Finance / Audit screens.
+    List<AgentAdvanceResponse> getAllAdvances();
+    AgentAdvanceResponse getAdvanceById(Long advanceId);
+
     // Called by payroll/agentformula during a payroll run — not exposed via a controller.
     BigDecimal getRecoverableBalanceForAgent(Long agentId);
     void recoverForPayrollRun(Long agentId, BigDecimal amountToRecover);

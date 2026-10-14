@@ -14,4 +14,7 @@ public interface PayrollRunRepository extends JpaRepository<PayrollRun, Long> {
     List<PayrollRun> findByStatus(PayrollRunStatus status);
 
     List<PayrollRun> findByInitiatedByUserId(Long userId);
+
+    // Newest period first — backs the payroll runs list.
+    List<PayrollRun> findAllByOrderByPeriodEndDescIdDesc();
 }

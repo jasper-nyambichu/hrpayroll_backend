@@ -3,6 +3,7 @@ package com.company.hrpayroll.security;
 
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.repository.payroll.PayslipRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class AccessGuard {
 
     private final EmployeeRepository employeeRepository;
+    private final PayslipRepository payslipRepository;
 
     private User currentUser() {
         return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -53,6 +55,18 @@ public class AccessGuard {
         }
         return employeeRepository.findById(employeeId)
                 .map(employee -> user.getAgentId().equals(employee.getAgentId()))
+                .orElse(false);
+    }
+
+    // Looks up the payslip's actual owner from the database. Fails closed (false)
+    // for an unknown payslipId, so an employee can never read someone else's payslip by id.
+    public boolean isOwnPayslip(Long payslipId) {
+        User user = currentUser();
+        if (user.getEmployeeId() == null) {
+            return false;
+        }
+        return payslipRepository.findById(payslipId)
+                .map(payslip -> user.getEmployeeId().equals(payslip.getEmployeeId()))
                 .orElse(false);
     }
 

@@ -43,6 +43,13 @@ public class PayrollController {
         );
     }
 
+    // Every run, newest period first.
+    @GetMapping("/runs")
+    @PreAuthorize(STAFF_READ_ROLES)
+    public ApiResponse<List<PayrollRunResponse>> getRuns() {
+        return ApiResponse.success(payrollRunService.getAllRuns());
+    }
+
     @GetMapping("/runs/{runId}")
     @PreAuthorize(STAFF_READ_ROLES)
     public ApiResponse<PayrollRunResponse> getRun(@PathVariable Long runId) {
@@ -53,6 +60,28 @@ public class PayrollController {
     @PreAuthorize(STAFF_READ_ROLES)
     public ApiResponse<List<PayslipResponse>> getPayslips(@PathVariable Long runId) {
         return ApiResponse.success(payrollRunService.getPayslipsForRun(runId));
+    }
+
+    // One payslip. Staff with the read roles see any; an employee only their own,
+    // verified against the payslip's real owner in the database (isOwnPayslip).
+    @GetMapping("/payslips/{payslipId}")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isOwnPayslip(#payslipId)")
+    public ApiResponse<PayslipResponse> getPayslip(@PathVariable Long payslipId) {
+        return ApiResponse.success(payrollRunService.getPayslipById(payslipId));
+    }
+
+    // One employee's payslips across every run.
+    @GetMapping("/employees/{employeeId}/payslips")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isSameEmployee(#employeeId)")
+    public ApiResponse<List<PayslipResponse>> getPayslipsByEmployee(@PathVariable Long employeeId) {
+        return ApiResponse.success(payrollRunService.getPayslipsForEmployee(employeeId));
+    }
+
+    // ESS convenience endpoint — same /me pattern as the other employee rails.
+    @GetMapping("/my-payslips")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ApiResponse<List<PayslipResponse>> getMyPayslips() {
+        return ApiResponse.success(payrollRunService.getPayslipsForEmployee(accessGuard.currentEmployeeId()));
     }
 
     @GetMapping("/runs/{runId}/agent-summaries")

@@ -17,7 +17,10 @@ public class PayrollRunMapper {
                 run.getTotalGrossPayroll(),
                 run.getTotalNetPayroll(),
                 payslipCount,
-                agentCount
+                agentCount,
+                run.getScopeBranchIds(),
+                run.getScopeAgentIds(),
+                run.getScopeDepartmentIds()
         );
     }
 }

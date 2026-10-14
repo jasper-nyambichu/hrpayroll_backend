@@ -11,7 +11,16 @@ import java.util.List;
 public interface PayrollRunService {
     PayrollRunResponse runPayroll(PayrollRunRequest request, Long initiatedByUserId);
     PayrollRunResponse getRunById(Long payrollRunId);
+
+    // Every run, newest period first.
+    List<PayrollRunResponse> getAllRuns();
+
     List<PayslipResponse> getPayslipsForRun(Long payrollRunId);
+    PayslipResponse getPayslipById(Long payslipId);
+
+    // One employee's payslips across every run, newest period first.
+    List<PayslipResponse> getPayslipsForEmployee(Long employeeId);
+
     List<AgentPayrollSummaryResponse> getAgentSummariesForRun(Long payrollRunId);
 
     // One agent's summaries across every run, newest period first — backs the Agent Portal statements.

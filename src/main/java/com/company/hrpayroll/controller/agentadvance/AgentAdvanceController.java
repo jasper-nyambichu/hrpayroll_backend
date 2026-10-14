@@ -23,6 +23,9 @@ public class AgentAdvanceController {
     private final AgentAdvanceService agentAdvanceService;
     private final AccessGuard accessGuard;
 
+    private static final String STAFF_READ_ROLES =
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')";
+
     // Recording and manually recovering advances is a Payroll Officer
     // operation (proposal §4) — Finance Officer / Auditor are read-only and
     // agents can view their own advances (below) but never create or
@@ -46,8 +49,21 @@ public class AgentAdvanceController {
         return ApiResponse.success("Advance recovery applied", agentAdvanceService.recoverAmount(advanceId, request));
     }
 
+    // Company-wide list, newest first.
+    @GetMapping
+    @PreAuthorize(STAFF_READ_ROLES)
+    public ApiResponse<List<AgentAdvanceResponse>> getAllAdvances() {
+        return ApiResponse.success(agentAdvanceService.getAllAdvances());
+    }
+
+    @GetMapping("/{advanceId}")
+    @PreAuthorize(STAFF_READ_ROLES)
+    public ApiResponse<AgentAdvanceResponse> getAdvance(@PathVariable Long advanceId) {
+        return ApiResponse.success(agentAdvanceService.getAdvanceById(advanceId));
+    }
+
     @GetMapping("/by-agent/{agentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR') or @accessGuard.isSameAgent(#agentId)")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isSameAgent(#agentId)")
     public ApiResponse<List<AgentAdvanceResponse>> getAdvancesByAgent(@PathVariable Long agentId) {
         return ApiResponse.success(agentAdvanceService.getAdvancesByAgent(agentId));
     }

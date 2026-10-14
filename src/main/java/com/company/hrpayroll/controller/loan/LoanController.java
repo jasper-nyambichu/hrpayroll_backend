@@ -4,6 +4,7 @@ package com.company.hrpayroll.controller.loan;
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.loan.LoanRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
+import com.company.hrpayroll.dto.response.loan.LoanRepaymentResponse;
 import com.company.hrpayroll.dto.response.loan.LoanResponse;
 import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.loan.LoanService;
@@ -21,6 +22,11 @@ public class LoanController {
 
     private final LoanService loanService;
     private final AccessGuard accessGuard;
+
+    // Everyone who may READ company-wide loan data. Finance Officer and Auditor are
+    // read-only (proposal §4); approving or rejecting is the Payroll Officer's job.
+    private static final String LOAN_READ_ROLES =
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')";
 
     // Same pattern as leave applications — an employee requests a loan for
     // themselves; employeeId comes from the authenticated principal in the
@@ -44,22 +50,40 @@ public class LoanController {
     }
 
     @PutMapping("/{loanId}/approve")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER')")
     @Auditable(action = "LOAN_APPROVED", entityType = "Loan")
     public ApiResponse<LoanResponse> approveLoan(@PathVariable Long loanId) {
         return ApiResponse.success("Loan approved", loanService.approveLoan(loanId));
     }
 
     @PutMapping("/{loanId}/reject")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER')")
     @Auditable(action = "LOAN_REJECTED", entityType = "Loan")
     public ApiResponse<LoanResponse> rejectLoan(@PathVariable Long loanId) {
         return ApiResponse.success("Loan rejected", loanService.rejectLoan(loanId));
     }
 
+    // Company-wide list, newest first. Optional ?status=PENDING|APPROVED|REJECTED|CLOSED.
+    @GetMapping
+    @PreAuthorize(LOAN_READ_ROLES)
+    public ApiResponse<List<LoanResponse>> getAllLoans(@RequestParam(required = false) String status) {
+        return ApiResponse.success(loanService.getAllLoans(status));
+    }
+
+    @GetMapping("/{loanId}")
+    @PreAuthorize(LOAN_READ_ROLES)
+    public ApiResponse<LoanResponse> getLoan(@PathVariable Long loanId) {
+        return ApiResponse.success(loanService.getLoanById(loanId));
+    }
+
+    @GetMapping("/{loanId}/repayments")
+    @PreAuthorize(LOAN_READ_ROLES)
+    public ApiResponse<List<LoanRepaymentResponse>> getRepayments(@PathVariable Long loanId) {
+        return ApiResponse.success(loanService.getRepaymentsForLoan(loanId));
+    }
+
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER') " +
-            "or @accessGuard.isSameEmployee(#employeeId)")
+    @PreAuthorize(LOAN_READ_ROLES + " or @accessGuard.isSameEmployee(#employeeId)")
     public ApiResponse<List<LoanResponse>> getLoansForEmployee(@PathVariable Long employeeId) {
         return ApiResponse.success(loanService.getLoansForEmployee(employeeId));
     }

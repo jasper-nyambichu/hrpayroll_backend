@@ -1,5 +1,5 @@
 // event/listener/NotificationEventListener.java
-package com.company.hrpayroll.event.listener;
+package com.company.hrpayroll.event;
 
 import com.company.hrpayroll.event.LeaveApprovedEvent;
 import com.company.hrpayroll.event.PayrollCompletedEvent;
@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.List;
 
@@ -25,8 +27,11 @@ public class NotificationEventListener {
     // notifying potentially hundreds of employees after a payroll run is
     // pure I/O wait, so it runs on the virtual-thread executor and never
     // blocks the payroll transaction that triggered it.
+    //
+    // AFTER_COMMIT: the event is published inside the payroll transaction, but
+    // nobody must be told a payslip is available for a run that then rolled back.
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPayrollCompleted(PayrollCompletedEvent event) {
         for (Long userId : event.employeeUserIds()) {
             notificationService.notify(
