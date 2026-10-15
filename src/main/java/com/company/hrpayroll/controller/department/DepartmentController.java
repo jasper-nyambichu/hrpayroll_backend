@@ -45,8 +45,9 @@ public class DepartmentController {
     // Branch-scoped by nature of the query itself — a Branch Manager calling
     // this with their own branchId is safe; calling it with someone else's
     // is blocked by AccessGuard the same way BranchController blocks it.
+    // PAYROLL_OFFICER reads it to offer "one department" as a payroll scope.
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<DepartmentResponse>> getDepartmentsByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(departmentService.getDepartmentsByBranch(branchId));
     }

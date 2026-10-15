@@ -57,9 +57,10 @@ public class BranchController {
         return ApiResponse.success(branchService.getBranchById(accessGuard.currentBranchId()));
     }
 
-    // HR_MANAGER needs this list to choose a branch on the Add Employee form.
+    // HR_MANAGER needs this list to choose a branch on the Add Employee form;
+    // PAYROLL_OFFICER needs it to choose the scope of a payroll run.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER')")
     public ApiResponse<List<BranchResponse>> getAllBranches() {
         return ApiResponse.success(branchService.getAllBranches());
     }
