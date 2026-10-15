@@ -52,11 +52,24 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
-    public LoanResponse approveLoan(Long loanId) {
+    public LoanResponse approveLoan(Long loanId, BigDecimal interestRate) {
         Loan loan = findOrThrow(loanId);
         if (!"PENDING".equals(loan.getStatus())) {
             throw new InvalidOperationException("Only pending loans can be approved");
         }
+
+        // Employees never set their own interest: the approver fixes it here,
+        // and the balance becomes the full amount owed (principal + flat interest).
+        if (interestRate != null) {
+            loan.setInterestRate(interestRate);
+            loan.setOutstandingBalance(LoanMapper.totalRepayable(loan.getPrincipalAmount(), interestRate));
+        }
+
+        if (loan.getInstallmentAmount().compareTo(loan.getOutstandingBalance()) > 0) {
+            throw new InvalidOperationException(
+                    "Installment amount cannot exceed the total repayable amount of " + loan.getOutstandingBalance());
+        }
+
         loan.setStatus("APPROVED");
         loan.setApprovalDate(businessClock.today());
         Loan saved = loanRepository.save(loan);
@@ -77,6 +90,7 @@ public class LoanServiceImpl implements LoanService {
     @Override
     public List<LoanResponse> getLoansForEmployee(Long employeeId) {
         return loanRepository.findByEmployeeId(employeeId).stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId()))
                 .map(this::toResponseWithEmployeeName)
                 .toList();
     }

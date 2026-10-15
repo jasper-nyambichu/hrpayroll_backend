@@ -10,7 +10,10 @@ import java.util.List;
 
 public interface LoanService {
     LoanResponse requestLoan(LoanRequest request);
-    LoanResponse approveLoan(Long loanId);
+
+    // interestRate is optional: when given, the approver is fixing the flat interest
+    // for this loan and the balance becomes principal + interest.
+    LoanResponse approveLoan(Long loanId, BigDecimal interestRate);
     LoanResponse rejectLoan(Long loanId);
     List<LoanResponse> getLoansForEmployee(Long employeeId);
 
