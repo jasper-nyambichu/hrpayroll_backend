@@ -36,6 +36,13 @@ public class DepartmentController {
         return ApiResponse.success("Department updated", departmentService.updateDepartment(id, request));
     }
 
+    // Every department across every branch — backs the Admin departments page.
+    @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER')")
+    public ApiResponse<List<DepartmentResponse>> getAllDepartments() {
+        return ApiResponse.success(departmentService.getAllDepartments());
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') or hasRole('BRANCH_MANAGER')")
     public ApiResponse<DepartmentResponse> getDepartmentById(@PathVariable Long id) {

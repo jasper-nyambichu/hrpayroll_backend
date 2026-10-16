@@ -10,6 +10,7 @@ public interface DepartmentService {
     DepartmentResponse createDepartment(DepartmentRequest request);
     DepartmentResponse updateDepartment(Long id, DepartmentRequest request);
     DepartmentResponse getDepartmentById(Long id);
+    List<DepartmentResponse> getAllDepartments();
     List<DepartmentResponse> getDepartmentsByBranch(Long branchId);
     void deleteDepartment(Long id);
 }

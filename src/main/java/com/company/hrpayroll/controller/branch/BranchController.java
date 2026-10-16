@@ -5,6 +5,7 @@ import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.branch.BranchRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.branch.BranchResponse;
+import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.branch.BranchService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,9 +19,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BranchController {
 
-
     private final BranchService branchService;
-    private final com.company.hrpayroll.security.AccessGuard accessGuard;
+    private final AccessGuard accessGuard;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
@@ -49,8 +49,6 @@ public class BranchController {
 
     // Convenience endpoint so the Branch Manager frontend doesn't need to
     // already know its own branch ID before it can call anything.
-    // add to constructor via @RequiredArgsConstructor
-
     @GetMapping("/my-branch")
     @PreAuthorize("hasRole('BRANCH_MANAGER')")
     public ApiResponse<BranchResponse> getMyBranch() {
@@ -73,11 +71,11 @@ public class BranchController {
         return ApiResponse.success("Branch deactivated", null);
     }
 
-    // Small helper so /my-branch doesn't need AccessGuard injected just for
-    // one call — reads the same way @accessGuard.currentBranchId() would.
-    private Long accessGuardCurrentBranchId() {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        var user = (com.company.hrpayroll.entity.auth.User) auth.getPrincipal();
-        return user.getBranchId();
+    @PutMapping("/{id}/activate")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "BRANCH_ACTIVATED", entityType = "Branch")
+    public ApiResponse<Void> activateBranch(@PathVariable Long id) {
+        branchService.activateBranch(id);
+        return ApiResponse.success("Branch activated", null);
     }
 }
