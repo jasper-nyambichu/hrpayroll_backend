@@ -38,11 +38,10 @@ public class BranchController {
         return ApiResponse.success("Branch updated", branchService.updateBranch(id, request));
     }
 
-    // Super Admin/Admin see any branch by ID; a Branch Manager can only
-    // fetch their own — this is AccessGuard.isSameBranch() doing exactly
-    // what it was built for back in the security phase.
+    // Super Admin/Admin see any branch by ID, as do HR and the read-only finance roles;
+    // a Branch Manager can only fetch their own — AccessGuard.isSameBranch() at work.
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or @accessGuard.isSameBranch(#id)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'FINANCE_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#id)")
     public ApiResponse<BranchResponse> getBranchById(@PathVariable Long id) {
         return ApiResponse.success(branchService.getBranchById(id));
     }
@@ -56,9 +55,9 @@ public class BranchController {
     }
 
     // HR_MANAGER needs this list to choose a branch on the Add Employee form;
-    // PAYROLL_OFFICER needs it to choose the scope of a payroll run.
+    // PAYROLL_OFFICER to choose the scope of a payroll run; FINANCE_OFFICER and AUDITOR read it.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')")
     public ApiResponse<List<BranchResponse>> getAllBranches() {
         return ApiResponse.success(branchService.getAllBranches());
     }

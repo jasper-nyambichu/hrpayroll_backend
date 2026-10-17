@@ -20,8 +20,9 @@ public class CompanySettingsController {
 
     private final CompanySettingsService companySettingsService;
 
+    // FINANCE_OFFICER and AUDITOR read the rules (e.g. to check the VAT rate on agent invoices).
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')")
     public ApiResponse<CompanySettingsResponse> getSettings() {
         return ApiResponse.success(companySettingsService.getSettings());
     }

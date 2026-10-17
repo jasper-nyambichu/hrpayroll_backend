@@ -44,7 +44,8 @@ public class EmployeeController {
     // Fixed: correctly scoped per the gap-fix — Super Admin/Admin/HR/Payroll
     // see any employee; a Branch Manager only if the employee is actually
     // in their branch; an Agent only if the employee is actually theirs;
-    // an Employee only their own record.
+    // an Employee only their own record. The full record carries national ID
+    // and bank details, so the Auditor deliberately reads the list endpoints only.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') " +
             "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#id)) " +
@@ -55,22 +56,22 @@ public class EmployeeController {
     }
 
     // The real branch boundary — a Branch Manager can only list employees
-    // for their own branch.
+    // for their own branch. The Auditor reads any branch's list (read-only).
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getEmployeesByBranch(branchId));
     }
 
     // The Agent Portal boundary — an agent only ever sees their own workers.
     @GetMapping("/by-agent/{agentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or @accessGuard.isSameAgent(#agentId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameAgent(#agentId)")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByAgent(@PathVariable Long agentId) {
         return ApiResponse.success(employeeService.getEmployeesByAgent(agentId));
     }
 
     @GetMapping("/by-department/{departmentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER', 'AUDITOR')")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByDepartment(@PathVariable Long departmentId) {
         return ApiResponse.success(employeeService.getEmployeesByDepartment(departmentId));
     }

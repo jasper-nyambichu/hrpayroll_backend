@@ -1,5 +1,4 @@
 // controller/agent/AgentController.java
-
 package com.company.hrpayroll.controller.agent;
 
 import com.company.hrpayroll.audit.Auditable;
@@ -39,8 +38,9 @@ public class AgentController {
         return ApiResponse.success("Agent updated", agentService.updateAgent(id, request));
     }
 
+    // FINANCE_OFFICER and AUDITOR read agents as part of their financial review (read-only).
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or @accessGuard.isSameAgent(#id)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR') or @accessGuard.isSameAgent(#id)")
     public ApiResponse<AgentResponse> getAgentById(@PathVariable Long id) {
         return ApiResponse.success(agentService.getAgentById(id));
     }
@@ -53,7 +53,7 @@ public class AgentController {
 
     // HR_MANAGER needs this list to assign an agent on the Add Employee form.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'HR_MANAGER', 'FINANCE_OFFICER', 'AUDITOR')")
     public ApiResponse<List<AgentResponse>> getAllAgents() {
         return ApiResponse.success(agentService.getAllAgents());
     }

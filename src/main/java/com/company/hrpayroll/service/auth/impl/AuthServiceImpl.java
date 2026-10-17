@@ -1,6 +1,7 @@
 // service/auth/impl/AuthServiceImpl.java
 package com.company.hrpayroll.service.auth.impl;
 
+import com.company.hrpayroll.audit.AuditDetails;
 import com.company.hrpayroll.dto.request.auth.AgentLoginRequest;
 import com.company.hrpayroll.dto.request.auth.EmployeeLoginRequest;
 import com.company.hrpayroll.dto.request.auth.LoginRequest;
@@ -16,6 +17,7 @@ import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.security.CustomUserDetailsService;
 import com.company.hrpayroll.security.JwtService;
 import com.company.hrpayroll.security.LoginAttemptService;
+import com.company.hrpayroll.service.audit.AuditService;
 import com.company.hrpayroll.service.auth.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -35,6 +37,15 @@ public class AuthServiceImpl implements AuthService {
     private static final String LOCKED_MESSAGE =
             "Too many failed attempts. This account is locked for 15 minutes.";
 
+    // Audit trail actions for sign-in (proposal §5: "a record of every login").
+    private static final String ACTION_SUCCESS = "LOGIN_SUCCESS";
+    private static final String ACTION_FAILED = "LOGIN_FAILED";
+    private static final String ACTION_BLOCKED = "LOGIN_BLOCKED";
+
+    private static final String SURFACE_STAFF = "staff";
+    private static final String SURFACE_EMPLOYEE = "employee";
+    private static final String SURFACE_AGENT = "agent";
+
     // Every role that should be able to reach the staff login surface.
     // AGENT and EMPLOYEE deliberately excluded — they have their own
     // dedicated endpoints below, and must never authenticate here even
@@ -50,58 +61,65 @@ public class AuthServiceImpl implements AuthService {
     private final CustomUserDetailsService userDetailsService;
     private final JwtService jwtService;
     private final LoginAttemptService loginAttemptService;
+    private final AuditService auditService;
 
     @Override
     public AuthResponse login(LoginRequest request) {
-        String key = "login:" + request.username();
-        guardAgainstLockout(key);
+        String identifier = request.username();
+        String key = "login:" + identifier;
+        guardAgainstLockout(key, SURFACE_STAFF, identifier);
 
-        User user = userRepository.findByUsername(request.username())
-                .orElseThrow(() -> fail(key));
+        User user = userRepository.findByUsername(identifier)
+                .orElseThrow(() -> fail(key, SURFACE_STAFF, identifier, null));
 
         if (!STAFF_ROLES.contains(user.getRole())) {
-            throw fail(key);
+            throw fail(key, SURFACE_STAFF, identifier, user.getId());
         }
 
-        verify(key, user.getUsername(), request.password());
+        verify(key, SURFACE_STAFF, identifier, user, request.password());
         loginAttemptService.recordSuccess(key);
+        auditLogin(user.getId(), ACTION_SUCCESS, SURFACE_STAFF, identifier, null);
         return buildAuthResponse(user);
     }
 
     @Override
     public AuthResponse employeeLogin(EmployeeLoginRequest request) {
-        String key = "employee:" + request.employeeNumber();
-        guardAgainstLockout(key);
+        String identifier = request.employeeNumber();
+        String key = "employee:" + identifier;
+        guardAgainstLockout(key, SURFACE_EMPLOYEE, identifier);
 
-        Employee employee = employeeRepository.findByEmployeeNumber(request.employeeNumber())
-                .orElseThrow(() -> fail(key));
+        Employee employee = employeeRepository.findByEmployeeNumber(identifier)
+                .orElseThrow(() -> fail(key, SURFACE_EMPLOYEE, identifier, null));
 
         User user = userRepository.findByEmployeeId(employee.getId())
-                .orElseThrow(() -> fail(key));
+                .orElseThrow(() -> fail(key, SURFACE_EMPLOYEE, identifier, null));
 
         if (user.getRole() != Role.EMPLOYEE) {
-            throw fail(key);
+            throw fail(key, SURFACE_EMPLOYEE, identifier, user.getId());
         }
 
-        verify(key, user.getUsername(), request.pin());
+        verify(key, SURFACE_EMPLOYEE, identifier, user, request.pin());
         loginAttemptService.recordSuccess(key);
+        auditLogin(user.getId(), ACTION_SUCCESS, SURFACE_EMPLOYEE, identifier, null);
         return buildAuthResponse(user);
     }
 
     @Override
     public AuthResponse agentLogin(AgentLoginRequest request) {
-        String key = "agent:" + request.agentCode();
-        guardAgainstLockout(key);
+        String identifier = request.agentCode();
+        String key = "agent:" + identifier;
+        guardAgainstLockout(key, SURFACE_AGENT, identifier);
 
-        User user = userRepository.findByUsername(request.agentCode())
-                .orElseThrow(() -> fail(key));
+        User user = userRepository.findByUsername(identifier)
+                .orElseThrow(() -> fail(key, SURFACE_AGENT, identifier, null));
 
         if (user.getRole() != Role.AGENT || user.getAgentId() == null) {
-            throw fail(key);
+            throw fail(key, SURFACE_AGENT, identifier, user.getId());
         }
 
-        verify(key, user.getUsername(), request.password());
+        verify(key, SURFACE_AGENT, identifier, user, request.password());
         loginAttemptService.recordSuccess(key);
+        auditLogin(user.getId(), ACTION_SUCCESS, SURFACE_AGENT, identifier, null);
         return buildAuthResponse(user);
     }
 
@@ -123,26 +141,35 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse((User) userDetails);
     }
 
-    private void guardAgainstLockout(String key) {
+    private void guardAgainstLockout(String key, String surface, String identifier) {
         if (loginAttemptService.isLocked(key)) {
+            auditLogin(null, ACTION_BLOCKED, surface, identifier, "ACCOUNT_LOCKED");
             throw new AccountLockedException(LOCKED_MESSAGE);
         }
     }
 
-    /** Records the failure against the lockout key and returns the exception to throw. */
-    private InvalidCredentialsException fail(String key) {
+    /** Records the failure against the lockout key and in the audit trail, and returns the exception to throw. */
+    private InvalidCredentialsException fail(String key, String surface, String identifier, Long userId) {
         loginAttemptService.recordFailure(key);
+        auditLogin(userId, ACTION_FAILED, surface, identifier, "INVALID_CREDENTIALS");
         return new InvalidCredentialsException(GENERIC_FAILURE);
     }
 
-    private void verify(String key, String username, String rawCredential) {
+    private void verify(String key, String surface, String identifier, User user, String rawCredential) {
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(username, rawCredential)
+                    new UsernamePasswordAuthenticationToken(user.getUsername(), rawCredential)
             );
         } catch (AuthenticationException ex) {
-            throw fail(key);
+            throw fail(key, surface, identifier, user.getId());
         }
+    }
+
+    // The attempted identifier is recorded (a username, employee number or agent code);
+    // the password / PIN never is. The write is independent of the login's outcome.
+    private void auditLogin(Long userId, String action, String surface, String identifier, String reason) {
+        auditService.record(userId, action, "User", userId,
+                AuditDetails.withRequest("surface", surface, "identifier", identifier, "reason", reason));
     }
 
     private AuthResponse buildAuthResponse(User user) {

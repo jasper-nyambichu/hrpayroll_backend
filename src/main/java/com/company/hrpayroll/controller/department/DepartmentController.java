@@ -38,13 +38,13 @@ public class DepartmentController {
 
     // Every department across every branch — backs the Admin departments page.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR')")
     public ApiResponse<List<DepartmentResponse>> getAllDepartments() {
         return ApiResponse.success(departmentService.getAllDepartments());
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') or hasRole('BRANCH_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'AUDITOR') or hasRole('BRANCH_MANAGER')")
     public ApiResponse<DepartmentResponse> getDepartmentById(@PathVariable Long id) {
         return ApiResponse.success(departmentService.getDepartmentById(id));
     }
@@ -54,7 +54,7 @@ public class DepartmentController {
     // is blocked by AccessGuard the same way BranchController blocks it.
     // PAYROLL_OFFICER reads it to offer "one department" as a payroll scope.
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<DepartmentResponse>> getDepartmentsByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(departmentService.getDepartmentsByBranch(branchId));
     }
