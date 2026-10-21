@@ -3,14 +3,11 @@ package com.company.hrpayroll.service.department.impl;
 
 import com.company.hrpayroll.dto.request.department.DepartmentRequest;
 import com.company.hrpayroll.dto.response.department.DepartmentResponse;
-import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.department.Department;
-import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.exception.DuplicateResourceException;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.department.DepartmentMapper;
-import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.repository.department.DepartmentRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.service.department.DepartmentService;
@@ -19,12 +16,15 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * Departments are company-wide: one list (Finance, Operations, …) that every branch uses, so an
+ * employee in any branch is assigned from the same set. A department's head is any employee.
+ */
 @Service
 @RequiredArgsConstructor
 public class DepartmentServiceImpl implements DepartmentService {
 
     private final DepartmentRepository departmentRepository;
-    private final BranchRepository branchRepository;
     private final EmployeeRepository employeeRepository;
     private final DepartmentMapper departmentMapper;
 
@@ -32,17 +32,10 @@ public class DepartmentServiceImpl implements DepartmentService {
     public DepartmentResponse createDepartment(DepartmentRequest request) {
         DepartmentRequest normalized = normalize(request);
 
-        // A department must belong to a branch that actually exists and is active.
-        Branch branch = findBranchOrThrow(normalized.branchId());
-        if ("INACTIVE".equals(branch.getStatus())) {
-            throw new InvalidOperationException("Cannot add a department to an inactive branch");
+        if (departmentRepository.existsByNameIgnoreCase(normalized.name())) {
+            throw new DuplicateResourceException("A department named '" + normalized.name() + "' already exists");
         }
-
-        if (departmentRepository.existsByBranchIdAndNameIgnoreCase(normalized.branchId(), normalized.name())) {
-            throw new DuplicateResourceException(
-                    "Branch '" + branch.getName() + "' already has a department named '" + normalized.name() + "'");
-        }
-        validateHead(normalized.headOfDepartmentId(), normalized.branchId());
+        validateHead(normalized.headOfDepartmentId());
 
         Department saved = departmentRepository.save(departmentMapper.toDepartment(normalized));
         return toResponseWithNames(saved);
@@ -53,22 +46,10 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department department = findDepartmentOrThrow(id);
         DepartmentRequest normalized = normalize(request);
 
-        Branch branch = findBranchOrThrow(normalized.branchId());
-
-        // Moving a department to another branch would strand its employees in a
-        // department that no longer belongs to their branch.
-        boolean branchChanging = !department.getBranchId().equals(normalized.branchId());
-        if (branchChanging && !employeeRepository.findByDepartmentId(id).isEmpty()) {
-            throw new InvalidOperationException(
-                    "Reassign this department's employees before moving it to another branch");
+        if (departmentRepository.existsByNameIgnoreCaseAndIdNot(normalized.name(), id)) {
+            throw new DuplicateResourceException("A department named '" + normalized.name() + "' already exists");
         }
-
-        if (departmentRepository.existsByBranchIdAndNameIgnoreCaseAndIdNot(
-                normalized.branchId(), normalized.name(), id)) {
-            throw new DuplicateResourceException(
-                    "Branch '" + branch.getName() + "' already has a department named '" + normalized.name() + "'");
-        }
-        validateHead(normalized.headOfDepartmentId(), normalized.branchId());
+        validateHead(normalized.headOfDepartmentId());
 
         departmentMapper.updateDepartmentFromRequest(department, normalized);
         Department saved = departmentRepository.save(department);
@@ -82,16 +63,16 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public List<DepartmentResponse> getAllDepartments() {
-        return departmentRepository.findAll().stream()
+        return departmentRepository.findAllByOrderByNameAsc().stream()
                 .map(this::toResponseWithNames)
                 .toList();
     }
 
+    // Departments are no longer per branch, so every branch sees the same list. Kept so
+    // screens written against the old per-branch endpoint keep working.
     @Override
     public List<DepartmentResponse> getDepartmentsByBranch(Long branchId) {
-        return departmentRepository.findByBranchId(branchId).stream()
-                .map(this::toResponseWithNames)
-                .toList();
+        return getAllDepartments();
     }
 
     @Override
@@ -107,27 +88,15 @@ public class DepartmentServiceImpl implements DepartmentService {
         departmentRepository.delete(department);
     }
 
+    // Name only — the company-wide list has no branch. Any branchId sent is discarded.
     private DepartmentRequest normalize(DepartmentRequest request) {
-        return new DepartmentRequest(request.name().trim(), request.branchId(), request.headOfDepartmentId());
+        return new DepartmentRequest(request.name().trim(), null, request.headOfDepartmentId());
     }
 
-    // The head of department must be an employee who works in the department's branch.
-    private void validateHead(Long headOfDepartmentId, Long branchId) {
-        if (headOfDepartmentId == null) {
-            return;
+    private void validateHead(Long headOfDepartmentId) {
+        if (headOfDepartmentId != null && !employeeRepository.existsById(headOfDepartmentId)) {
+            throw new ResourceNotFoundException("Employee not found with id: " + headOfDepartmentId);
         }
-        Employee head = employeeRepository.findById(headOfDepartmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with id: " + headOfDepartmentId));
-
-        if (!head.getBranchId().equals(branchId)) {
-            throw new InvalidOperationException(
-                    "The head of department must work in the same branch as the department");
-        }
-    }
-
-    private Branch findBranchOrThrow(Long branchId) {
-        return branchRepository.findById(branchId)
-                .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + branchId));
     }
 
     private Department findDepartmentOrThrow(Long id) {
@@ -136,16 +105,12 @@ public class DepartmentServiceImpl implements DepartmentService {
     }
 
     private DepartmentResponse toResponseWithNames(Department department) {
-        String branchName = branchRepository.findById(department.getBranchId())
-                .map(b -> b.getName())
-                .orElse(null);
-
         String headName = department.getHeadOfDepartmentId() != null
                 ? employeeRepository.findById(department.getHeadOfDepartmentId())
                 .map(e -> e.getFullName())
                 .orElse(null)
                 : null;
 
-        return departmentMapper.toDepartmentResponse(department, branchName, headName);
+        return departmentMapper.toDepartmentResponse(department, null, headName);
     }
 }

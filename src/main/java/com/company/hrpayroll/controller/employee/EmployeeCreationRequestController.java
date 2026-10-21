@@ -18,18 +18,20 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-// HR_MANAGER proposes a new employee; ADMIN / SUPER_ADMIN approves or rejects.
-// Approval is what actually creates the Employee row.
+// A Branch Manager or an Agent (or the legacy HR role) proposes a new employee; an Admin
+// approves or rejects. Approval is what actually creates the Employee row.
 @RestController
 @RequestMapping("/employee-requests")
 @RequiredArgsConstructor
 public class EmployeeCreationRequestController {
 
+    private static final String SUBMITTER_ROLES = "hasAnyRole('HR_MANAGER', 'BRANCH_MANAGER', 'AGENT')";
+
     private final EmployeeCreationRequestService requestService;
     private final AccessGuard accessGuard;
 
     @PostMapping
-    @PreAuthorize("hasRole('HR_MANAGER')")
+    @PreAuthorize(SUBMITTER_ROLES)
     @Auditable(action = "EMPLOYEE_CREATION_REQUESTED", entityType = "EmployeeCreationRequest")
     public ApiResponse<EmployeeCreationRequestResponse> submit(@Valid @RequestBody EmployeeRequest request) {
         return ApiResponse.success(
@@ -46,16 +48,16 @@ public class EmployeeCreationRequestController {
         return ApiResponse.success(requestService.list(status));
     }
 
-    // HR's own submissions and their outcome.
+    // The submitter's own requests and their outcome.
     @GetMapping("/mine")
-    @PreAuthorize("hasRole('HR_MANAGER')")
+    @PreAuthorize(SUBMITTER_ROLES)
     public ApiResponse<List<EmployeeCreationRequestResponse>> mine() {
         return ApiResponse.success(requestService.listMine(accessGuard.currentUserId()));
     }
 
-    // Admin sees any; HR only the ones they submitted.
+    // Admin sees any; a submitter only the ones they submitted.
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'AGENT')")
     public ApiResponse<EmployeeCreationRequestResponse> getById(@PathVariable Long id, Authentication auth) {
         EmployeeCreationRequestResponse response = requestService.getById(id);
 

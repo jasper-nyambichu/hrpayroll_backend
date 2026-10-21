@@ -14,7 +14,9 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
     List<Department> findByHeadOfDepartmentId(Long employeeId);
 
-    boolean existsByBranchIdAndNameIgnoreCase(Long branchId, String name);
+    List<Department> findAllByOrderByNameAsc();
 
-    boolean existsByBranchIdAndNameIgnoreCaseAndIdNot(Long branchId, String name, Long id);
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

@@ -46,14 +46,11 @@ public class AuthServiceImpl implements AuthService {
     private static final String SURFACE_EMPLOYEE = "employee";
     private static final String SURFACE_AGENT = "agent";
 
-    // Every role that should be able to reach the staff login surface.
-    // AGENT and EMPLOYEE deliberately excluded — they have their own
-    // dedicated endpoints below, and must never authenticate here even
-    // with a correct password.
-    private static final Set<Role> STAFF_ROLES = EnumSet.of(
-            Role.SUPER_ADMIN, Role.ADMIN, Role.HR_MANAGER, Role.PAYROLL_OFFICER,
-            Role.BRANCH_MANAGER, Role.FINANCE_OFFICER, Role.AUDITOR
-    );
+    // Every role that signs in on the staff login surface: everyone except AGENT and
+    // EMPLOYEE, which have their own dedicated endpoints below and must never authenticate
+    // here even with a correct password. Derived (not listed), so a role added later is
+    // staff by default.
+    private static final Set<Role> STAFF_ROLES = EnumSet.complementOf(EnumSet.of(Role.AGENT, Role.EMPLOYEE));
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;

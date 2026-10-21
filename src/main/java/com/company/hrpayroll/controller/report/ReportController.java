@@ -26,11 +26,15 @@ public class ReportController {
     private static final String REPORT_ROLES =
             "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')";
 
+    // Attendance is also the Back Office officer's report; payroll reports stay closed to that role.
+    private static final String ATTENDANCE_REPORT_ROLES =
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR', 'BACK_OFFICE')";
+
     // Staff with the broad report roles can pull any branch; a Branch
     // Manager is restricted to their own — same pattern as every other
     // branch-scoped read endpoint built so far.
     @GetMapping("/attendance/{branchId}")
-    @PreAuthorize(REPORT_ROLES + " or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize(ATTENDANCE_REPORT_ROLES + " or @accessGuard.isSameBranch(#branchId)")
     public ResponseEntity<byte[]> getAttendanceReport(
             @PathVariable Long branchId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,

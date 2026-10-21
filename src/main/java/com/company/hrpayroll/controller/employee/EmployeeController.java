@@ -2,6 +2,7 @@
 package com.company.hrpayroll.controller.employee;
 
 import com.company.hrpayroll.audit.Auditable;
+import com.company.hrpayroll.dto.request.employee.DepartmentAssignmentRequest;
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
@@ -23,8 +24,8 @@ public class EmployeeController {
     private final EmployeeService employeeService;
     private final AccessGuard accessGuard;
 
-    // HR_MANAGER no longer creates employees directly — HR submits a request via
-    // POST /employee-requests and an Admin approves it (see EmployeeCreationRequestController).
+    // Admin adds employees directly. Branch Managers and Agents propose them through
+    // POST /employee-requests and an Admin approves (see EmployeeCreationRequestController).
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     @Auditable(action = "EMPLOYEE_CREATED", entityType = "Employee")
@@ -41,11 +42,22 @@ public class EmployeeController {
         return ApiResponse.success("Employee updated", employeeService.updateEmployee(id, request));
     }
 
-    // Fixed: correctly scoped per the gap-fix — Super Admin/Admin/HR/Payroll
-    // see any employee; a Branch Manager only if the employee is actually
-    // in their branch; an Agent only if the employee is actually theirs;
-    // an Employee only their own record. The full record carries national ID
-    // and bank details, so the Auditor deliberately reads the list endpoints only.
+    // Puts an employee in one of the company-wide departments and changes nothing else. A Branch
+    // Manager may do this only for employees of their own branch.
+    @PutMapping("/{id}/department")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#id))")
+    @Auditable(action = "EMPLOYEE_DEPARTMENT_ASSIGNED", entityType = "Employee")
+    public ApiResponse<EmployeeResponse> assignDepartment(
+            @PathVariable Long id, @Valid @RequestBody DepartmentAssignmentRequest request
+    ) {
+        return ApiResponse.success("Department assigned", employeeService.assignDepartment(id, request.departmentId()));
+    }
+
+    // Super Admin/Admin/HR/Payroll see any employee; a Branch Manager only if the employee is
+    // in their branch; an Agent only if the employee is theirs; an Employee only their own record.
+    // The full record carries national ID and bank details, so the Auditor and Back Office read
+    // the list endpoints only.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') " +
             "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#id)) " +
@@ -55,10 +67,10 @@ public class EmployeeController {
         return ApiResponse.success(employeeService.getEmployeeById(id));
     }
 
-    // The real branch boundary — a Branch Manager can only list employees
-    // for their own branch. The Auditor reads any branch's list (read-only).
+    // The real branch boundary — a Branch Manager can only list employees for their own branch.
+    // The Auditor and Back Office read any branch's list.
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BACK_OFFICE') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getEmployeesByBranch(branchId));
     }
@@ -71,7 +83,7 @@ public class EmployeeController {
     }
 
     @GetMapping("/by-department/{departmentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER', 'AUDITOR')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER', 'AUDITOR', 'BACK_OFFICE')")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByDepartment(@PathVariable Long departmentId) {
         return ApiResponse.success(employeeService.getEmployeesByDepartment(departmentId));
     }

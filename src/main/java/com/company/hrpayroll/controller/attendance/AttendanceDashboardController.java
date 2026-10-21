@@ -16,16 +16,17 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-// Read-only data for the ADMIN / SUPER_ADMIN (and branch-manager) attendance dashboards.
-// A BRANCH_MANAGER is automatically limited to their own branch inside the service.
+// Read-only data for the Admin, Branch Manager and Back Office attendance dashboards.
+// A BRANCH_MANAGER is automatically limited to their own branch inside the service;
+// BACK_OFFICE, who runs the clock-in/out application for the company, sees every branch.
 @RestController
 @RequestMapping("/attendance/dashboard")
 @RequiredArgsConstructor
 public class AttendanceDashboardController {
 
     private static final String VIEW_ROLES =
-            "hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','PAYROLL_OFFICER','AUDITOR','BRANCH_MANAGER')";
-    private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER')";
+            "hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','PAYROLL_OFFICER','AUDITOR','BRANCH_MANAGER','BACK_OFFICE')";
+    private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','BACK_OFFICE')";
 
     private final AttendanceDashboardService dashboardService;
 

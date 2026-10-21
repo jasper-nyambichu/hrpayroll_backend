@@ -34,7 +34,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     public EmployeeResponse createEmployee(EmployeeRequest request) {
         Branch branch = validateAndFetchBranch(request.branchId());
-        validateDepartmentBelongsToBranch(request.departmentId(), request.branchId());
+        validateDepartmentExists(request.departmentId());
         validateAgentExistsIfProvided(request.agentId());
         validateNationalIdUnique(request.nationalId(), null);
 
@@ -50,7 +50,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee employee = findEmployeeOrThrow(id);
 
         validateAndFetchBranch(request.branchId());
-        validateDepartmentBelongsToBranch(request.departmentId(), request.branchId());
+        validateDepartmentExists(request.departmentId());
         validateAgentExistsIfProvided(request.agentId());
         validateNationalIdUnique(request.nationalId(), id);
 
@@ -85,6 +85,20 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .toList();
     }
 
+    // Departments are company-wide, so any branch's employee can be placed in any department.
+    @Override
+    public EmployeeResponse assignDepartment(Long id, Long departmentId) {
+        Employee employee = findEmployeeOrThrow(id);
+
+        if (departmentId == null) {
+            throw new InvalidOperationException("Choose a department");
+        }
+        validateDepartmentExists(departmentId);
+
+        employee.setDepartmentId(departmentId);
+        return toFullResponse(employeeRepository.save(employee));
+    }
+
     @Override
     public void terminateEmployee(Long id) {
         Employee employee = findEmployeeOrThrow(id);
@@ -101,20 +115,20 @@ public class EmployeeServiceImpl implements EmployeeService {
     // ---- validation helpers ----
 
     private Branch validateAndFetchBranch(Long branchId) {
-        return branchRepository.findById(branchId)
+        Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + branchId));
+        if ("INACTIVE".equals(branch.getStatus())) {
+            throw new InvalidOperationException("Branch '" + branch.getName() + "' is inactive");
+        }
+        return branch;
     }
 
-    private void validateDepartmentBelongsToBranch(Long departmentId, Long branchId) {
+    private void validateDepartmentExists(Long departmentId) {
         if (departmentId == null) {
             return;
         }
-        Department department = departmentRepository.findById(departmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Department not found with id: " + departmentId));
-
-        if (!department.getBranchId().equals(branchId)) {
-            throw new InvalidOperationException(
-                    "Department '" + department.getName() + "' does not belong to the selected branch");
+        if (!departmentRepository.existsById(departmentId)) {
+            throw new ResourceNotFoundException("Department not found with id: " + departmentId);
         }
     }
 

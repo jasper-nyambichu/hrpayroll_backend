@@ -14,6 +14,10 @@ public interface EmployeeService {
     List<EmployeeSummaryResponse> getEmployeesByBranch(Long branchId);
     List<EmployeeSummaryResponse> getEmployeesByAgent(Long agentId);
     List<EmployeeSummaryResponse> getEmployeesByDepartment(Long departmentId);
+
+    // Moves one employee into a company-wide department. Nothing else on the record changes.
+    EmployeeResponse assignDepartment(Long id, Long departmentId);
+
     void terminateEmployee(Long id);
     void deleteEmployee(Long id);
 }

@@ -28,7 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
+/**
+ * Employees can be proposed by a Branch Manager, an Agent (or the legacy HR role) and only exist
+ * once an Admin approves — approval is what actually creates the Employee row.
+ *
+ *  - A Branch Manager's request is always for their OWN branch.
+ *  - An Agent's request is always under THEIR OWN agent record.
+ *  - When someone other than the agent submits staff for an agent, that agent is notified.
+ */
 @Service
 @RequiredArgsConstructor
 public class EmployeeCreationRequestServiceImpl implements EmployeeCreationRequestService {
@@ -44,25 +53,29 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
 
     // Notification types for this workflow. The bell links on these, so the
     // frontend (notification-bell.tsx) keys on the same strings.
-    private static final String TYPE_SUBMITTED = "EMPLOYEE_REQUEST_SUBMITTED"; // -> admins
-    private static final String TYPE_APPROVED = "EMPLOYEE_REQUEST_APPROVED";   // -> HR
-    private static final String TYPE_REJECTED = "EMPLOYEE_REQUEST_REJECTED";   // -> HR
+    private static final String TYPE_SUBMITTED = "EMPLOYEE_REQUEST_SUBMITTED";         // -> admins
+    private static final String TYPE_APPROVED = "EMPLOYEE_REQUEST_APPROVED";           // -> requester
+    private static final String TYPE_REJECTED = "EMPLOYEE_REQUEST_REJECTED";           // -> requester
+    private static final String TYPE_AGENT_NOTICE = "EMPLOYEE_REQUEST_AGENT_NOTICE";   // -> the agent
+    private static final String TYPE_AGENT_APPROVED = "EMPLOYEE_REQUEST_AGENT_APPROVED"; // -> the agent
 
     @Override
-    public EmployeeCreationRequestResponse submit(EmployeeRequest request, Long requestedByUserId) {
+    public EmployeeCreationRequestResponse submit(EmployeeRequest original, Long requestedByUserId) {
+        User submitter = userRepository.findById(requestedByUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + requestedByUserId));
+        EmployeeRequest request = scopeToSubmitter(original, submitter);
+
         // Early, friendly validation. The full set of checks runs again on approval
         // (EmployeeService.createEmployee), because data can change while pending.
-        branchRepository.findById(request.branchId())
+        Branch branch = branchRepository.findById(request.branchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + request.branchId()));
+        if ("INACTIVE".equals(branch.getStatus())) {
+            throw new InvalidOperationException("Branch '" + branch.getName() + "' is inactive");
+        }
 
-        if (request.departmentId() != null) {
-            Department department = departmentRepository.findById(request.departmentId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Department not found with id: " + request.departmentId()));
-            if (!department.getBranchId().equals(request.branchId())) {
-                throw new InvalidOperationException(
-                        "Department '" + department.getName() + "' does not belong to the selected branch");
-            }
+        // Departments are company-wide, so only their existence matters.
+        if (request.departmentId() != null && !departmentRepository.existsById(request.departmentId())) {
+            throw new ResourceNotFoundException("Department not found with id: " + request.departmentId());
         }
 
         if (request.agentId() != null && !agentRepository.existsById(request.agentId())) {
@@ -84,11 +97,22 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         EmployeeCreationRequest saved = requestRepository.save(toEntity(request, requestedByUserId));
 
         // Tell every active admin there is something to review.
-        String branchName = branchRepository.findById(request.branchId()).map(Branch::getName).orElse("a branch");
         String message = userName(requestedByUserId) + " requested to add " + request.fullName()
-                + " (" + branchName + "). Review and approve.";
+                + " (" + branch.getName() + "). Review and approve.";
         adminUsers().forEach(admin ->
                 notificationService.notifyInApp(admin.getId(), TYPE_SUBMITTED, message, saved.getId()));
+
+        // Tell the agent when somebody else is adding staff under their agency.
+        if (request.agentId() != null && !request.agentId().equals(submitter.getAgentId())) {
+            userRepository.findByAgentId(request.agentId())
+                    .filter(User::isActive)
+                    .ifPresent(agentUser -> notificationService.notifyInApp(
+                            agentUser.getId(), TYPE_AGENT_NOTICE,
+                            userName(requestedByUserId) + " submitted " + request.fullName()
+                                    + " to join your agency at " + branch.getName()
+                                    + ". Awaiting admin approval.",
+                            saved.getId()));
+        }
 
         return toResponse(saved);
     }
@@ -128,13 +152,16 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         entity.setCreatedEmployeeId(employee.id());
         EmployeeCreationRequest saved = requestRepository.save(entity);
 
-        // The admins' "needs review" notifications are done — clear them — and
-        // HR is told the outcome.
+        // The admins' "needs review" notifications are done — clear them — and the
+        // requester (and the agent, if different) is told the outcome.
         notificationService.resolveByReference(TYPE_SUBMITTED, id);
         notificationService.notifyInApp(saved.getRequestedByUserId(), TYPE_APPROVED,
                 "Approved by " + userName(reviewerUserId) + ": " + employee.fullName()
                         + " was added as " + employee.employeeNumber() + ".",
                 id);
+        notifyAgent(entity, TYPE_AGENT_APPROVED,
+                employee.fullName() + " was approved and added under your agency as "
+                        + employee.employeeNumber() + ".");
 
         return toResponse(saved);
     }
@@ -160,6 +187,50 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
     }
 
     // ---- helpers ----
+
+    // A Branch Manager can only propose staff for their own branch, and an Agent only under their
+    // own agent record — whatever the form says. Every other submitter is taken at their word.
+    private EmployeeRequest scopeToSubmitter(EmployeeRequest r, User submitter) {
+        Long branchId = r.branchId();
+        Long agentId = r.agentId();
+
+        if (submitter.getRole() == Role.BRANCH_MANAGER) {
+            if (submitter.getBranchId() == null) {
+                throw new InvalidOperationException(
+                        "Your account is not assigned to a branch. Ask an Admin to assign you one.");
+            }
+            branchId = submitter.getBranchId();
+        } else if (submitter.getRole() == Role.AGENT) {
+            if (submitter.getAgentId() == null) {
+                throw new InvalidOperationException("Your account is not linked to an agent record.");
+            }
+            agentId = submitter.getAgentId();
+        }
+
+        if (Objects.equals(branchId, r.branchId()) && Objects.equals(agentId, r.agentId())) {
+            return r;
+        }
+
+        return new EmployeeRequest(
+                r.fullName(), r.nationalId(), r.dateOfBirth(), r.gender(), r.maritalStatus(),
+                r.phone(), r.email(), r.address(), r.kraPin(), r.shifNumber(),
+                r.nssfNumber(), r.nitaNumber(), branchId, r.departmentId(), agentId,
+                r.position(), r.employmentType(), r.basicSalary(), r.dateHired(),
+                r.bankName(), r.bankAccountNumber(), r.emergencyContactName(),
+                r.emergencyContactPhone());
+    }
+
+    // Tells the agent's login about an outcome, unless the agent is the one who asked.
+    private void notifyAgent(EmployeeCreationRequest entity, String type, String message) {
+        if (entity.getAgentId() == null) {
+            return;
+        }
+        userRepository.findByAgentId(entity.getAgentId())
+                .filter(User::isActive)
+                .filter(agentUser -> !agentUser.getId().equals(entity.getRequestedByUserId()))
+                .ifPresent(agentUser ->
+                        notificationService.notifyInApp(agentUser.getId(), type, message, entity.getId()));
+    }
 
     private EmployeeCreationRequest findOrThrow(Long id) {
         return requestRepository.findById(id)

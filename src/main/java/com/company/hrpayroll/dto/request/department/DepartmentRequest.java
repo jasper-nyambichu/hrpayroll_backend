@@ -2,10 +2,10 @@
 package com.company.hrpayroll.dto.request.department;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
+// branchId is accepted but ignored: departments are company-wide.
 public record DepartmentRequest(
         @NotBlank(message = "Department name is required") String name,
-        @NotNull(message = "Branch is required") Long branchId,
+        Long branchId,
         Long headOfDepartmentId
 ) {}

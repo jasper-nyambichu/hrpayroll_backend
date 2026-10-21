@@ -32,4 +32,13 @@ public interface PayslipRepository extends JpaRepository<Payslip, Long> {
             @Param("employeeIds") Collection<Long> employeeIds,
             @Param("periodStart") LocalDate periodStart,
             @Param("periodEnd") LocalDate periodEnd);
+
+    // Per run, the totals for DIRECT employees only (those with no agent) — the people the
+    // company itself pays and remits for. Columns: runId, count, net, PAYE, NSSF, SHIF,
+    // housing levy, NITA, loan deductions.
+    @Query("select p.payrollRunId, count(p), sum(p.netPay), sum(p.payeDeduction), sum(p.nssfDeduction), " +
+            "sum(p.shifDeduction), sum(p.housingLevyDeduction), sum(p.nitaDeduction), sum(p.loanDeduction) " +
+            "from Payslip p, Employee e where p.employeeId = e.id and e.agentId is null " +
+            "group by p.payrollRunId")
+    List<Object[]> sumDirectEmployeesByRun();
 }

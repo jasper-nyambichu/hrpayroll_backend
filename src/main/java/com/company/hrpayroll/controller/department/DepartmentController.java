@@ -13,10 +13,15 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+// Departments are company-wide. The Admin creates them; Branch Managers assign employees to
+// them and Agents choose from them when adding staff, so both only need to read the list.
 @RestController
 @RequestMapping("/departments")
 @RequiredArgsConstructor
 public class DepartmentController {
+
+    private static final String READ_ROLES =
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BRANCH_MANAGER', 'AGENT', 'BACK_OFFICE')";
 
     private final DepartmentService departmentService;
 
@@ -36,25 +41,23 @@ public class DepartmentController {
         return ApiResponse.success("Department updated", departmentService.updateDepartment(id, request));
     }
 
-    // Every department across every branch — backs the Admin departments page.
+    // Every department, by name.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR')")
+    @PreAuthorize(READ_ROLES)
     public ApiResponse<List<DepartmentResponse>> getAllDepartments() {
         return ApiResponse.success(departmentService.getAllDepartments());
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'AUDITOR') or hasRole('BRANCH_MANAGER')")
+    @PreAuthorize(READ_ROLES)
     public ApiResponse<DepartmentResponse> getDepartmentById(@PathVariable Long id) {
         return ApiResponse.success(departmentService.getDepartmentById(id));
     }
 
-    // Branch-scoped by nature of the query itself — a Branch Manager calling
-    // this with their own branchId is safe; calling it with someone else's
-    // is blocked by AccessGuard the same way BranchController blocks it.
-    // PAYROLL_OFFICER reads it to offer "one department" as a payroll scope.
+    // Kept for screens written against the old per-branch endpoint: departments are now
+    // company-wide, so this returns the same list for every branch.
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize(READ_ROLES)
     public ApiResponse<List<DepartmentResponse>> getDepartmentsByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(departmentService.getDepartmentsByBranch(branchId));
     }

@@ -54,10 +54,11 @@ public class BranchController {
         return ApiResponse.success(branchService.getBranchById(accessGuard.currentBranchId()));
     }
 
-    // HR_MANAGER needs this list to choose a branch on the Add Employee form;
-    // PAYROLL_OFFICER to choose the scope of a payroll run; FINANCE_OFFICER and AUDITOR read it.
+    // HR_MANAGER needs this list to choose a branch on the Add Employee form; PAYROLL_OFFICER to
+    // choose the scope of a payroll run; FINANCE_OFFICER and AUDITOR read it; BACK_OFFICE filters
+    // attendance and devices by branch; AGENT chooses where to place the staff they add.
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR', 'BACK_OFFICE', 'AGENT')")
     public ApiResponse<List<BranchResponse>> getAllBranches() {
         return ApiResponse.success(branchService.getAllBranches());
     }

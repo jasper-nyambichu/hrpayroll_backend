@@ -22,6 +22,9 @@ public class AgentController {
     private final AgentService agentService;
     private final AccessGuard accessGuard;
 
+    // Just enough to pick an agent on a form: id and name, active agents only.
+    public record AgentOption(Long id, String name) {}
+
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     @Auditable(action = "AGENT_CREATED", entityType = "Agent")
@@ -56,6 +59,17 @@ public class AgentController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'HR_MANAGER', 'FINANCE_OFFICER', 'AUDITOR')")
     public ApiResponse<List<AgentResponse>> getAllAgents() {
         return ApiResponse.success(agentService.getAllAgents());
+    }
+
+    // Id and name of the active agents, for choosing one on a form. Branch Managers use this when
+    // adding an employee (the chosen agent is notified); it exposes none of an agent's other details.
+    @GetMapping("/options")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER')")
+    public ApiResponse<List<AgentOption>> getAgentOptions() {
+        return ApiResponse.success(agentService.getAllAgents().stream()
+                .filter(agent -> "ACTIVE".equals(agent.status()))
+                .map(agent -> new AgentOption(agent.id(), agent.name()))
+                .toList());
     }
 
     @PutMapping("/{id}/deactivate")

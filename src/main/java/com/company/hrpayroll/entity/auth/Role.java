@@ -9,6 +9,7 @@ public enum Role {
     BRANCH_MANAGER,
     AGENT,
     EMPLOYEE,
-    FINANCE_OFFICER,
-    AUDITOR
+    FINANCE_OFFICER,   // shown to users as "Accounts Office"
+    AUDITOR,
+    BACK_OFFICE        // runs the clock-in/out desktop application and records days worked and damages
 }
