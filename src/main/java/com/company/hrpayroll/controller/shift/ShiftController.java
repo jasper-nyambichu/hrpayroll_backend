@@ -42,15 +42,19 @@ public class ShiftController {
         return ApiResponse.success(shiftService.getAllShifts());
     }
 
+    // A Branch Manager may assign a shift to one of their own employees or to their own branch
+    // (AccessGuard.canAssignShift); company-wide and department assignments stay with Admin.
     @PostMapping("/assignments")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.canAssignShift(#request))")
     @Auditable(action = "SHIFT_ASSIGNED", entityType = "ShiftAssignment")
     public ApiResponse<ShiftAssignmentResponse> assignShift(@Valid @RequestBody ShiftAssignmentRequest request) {
         return ApiResponse.success("Shift assigned", shiftService.assignShift(request));
     }
 
     @GetMapping("/assignments/employee/{employeeId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') " +
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#employeeId)) " +
             "or @accessGuard.isSameEmployee(#employeeId)")
     public ApiResponse<List<ShiftAssignmentResponse>> getAssignmentsForEmployee(@PathVariable Long employeeId) {
         return ApiResponse.success(shiftService.getAssignmentsForEmployee(employeeId));

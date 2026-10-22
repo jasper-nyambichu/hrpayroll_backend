@@ -1,8 +1,10 @@
 // security/AccessGuard.java
 package com.company.hrpayroll.security;
 
+import com.company.hrpayroll.dto.request.shift.ShiftAssignmentRequest;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
 import com.company.hrpayroll.repository.payroll.PayslipRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +18,7 @@ public class AccessGuard {
 
     private final EmployeeRepository employeeRepository;
     private final PayslipRepository payslipRepository;
+    private final LeaveRequestRepository leaveRequestRepository;
 
     private User currentUser() {
         return (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -68,6 +71,34 @@ public class AccessGuard {
         return payslipRepository.findById(payslipId)
                 .map(payslip -> user.getEmployeeId().equals(payslip.getEmployeeId()))
                 .orElse(false);
+    }
+
+    // The leave request's employee must work in the caller's branch — otherwise a Branch Manager
+    // could decide another branch's leave just by guessing an id. Fails closed for an unknown id.
+    public boolean isLeaveRequestInMyBranch(Long leaveRequestId) {
+        User user = currentUser();
+        if (user.getBranchId() == null) {
+            return false;
+        }
+        return leaveRequestRepository.findById(leaveRequestId)
+                .flatMap(leave -> employeeRepository.findById(leave.getEmployeeId()))
+                .map(employee -> user.getBranchId().equals(employee.getBranchId()))
+                .orElse(false);
+    }
+
+    // A Branch Manager may assign a shift to ONE of their own employees or to their whole branch.
+    // A department spans every branch, so assigning by department is not theirs to do.
+    public boolean canAssignShift(ShiftAssignmentRequest request) {
+        if (request == null) {
+            return false;
+        }
+        if (request.employeeId() != null) {
+            return isEmployeeInMyBranch(request.employeeId());
+        }
+        if (request.branchId() != null) {
+            return isSameBranch(request.branchId());
+        }
+        return false;
     }
 
     public Long currentBranchId() {

@@ -1,5 +1,4 @@
-// controller/leave/LeaveController.java — corrected approveByHr(), plus one new dependency
-
+// controller/leave/LeaveController.java
 package com.company.hrpayroll.controller.leave;
 
 import com.company.hrpayroll.audit.Auditable;
@@ -31,7 +30,7 @@ public class LeaveController {
     private final LeaveService leaveService;
     private final AccessGuard accessGuard;
     private final ApplicationEventPublisher eventPublisher;
-    private final UserRepository userRepository; // added — needed to resolve Employee.id -> User.id
+    private final UserRepository userRepository; // needed to resolve Employee.id -> User.id
 
     @GetMapping("/types")
     public ApiResponse<List<LeaveTypeResponse>> getAllLeaveTypes() {
@@ -47,25 +46,25 @@ public class LeaveController {
         );
     }
 
+    // First stage. The request must belong to an employee of the manager's OWN branch — the
+    // branch is checked against the database, not trusted from the caller.
     @PutMapping("/{leaveRequestId}/approve-by-manager")
-    @PreAuthorize("hasRole('BRANCH_MANAGER')")
+    @PreAuthorize("hasRole('BRANCH_MANAGER') and @accessGuard.isLeaveRequestInMyBranch(#leaveRequestId)")
     @Auditable(action = "LEAVE_APPROVED_BY_MANAGER", entityType = "LeaveRequest")
     public ApiResponse<LeaveRequestResponse> approveByManager(
             @PathVariable Long leaveRequestId, @RequestBody LeaveApprovalRequest request
     ) {
         return ApiResponse.success(
-                request.approved() ? "Forwarded to HR for final approval" : "Leave request rejected",
+                request.approved() ? "Forwarded to the Admin for final approval" : "Leave request rejected",
                 leaveService.approveByManager(leaveRequestId, request)
         );
     }
 
-    // Fixed: resolves the employee's actual User.id via UserRepository
-    // before publishing, instead of passing the Employee.id straight through
-    // as if it were a User.id. If no login account exists for this employee
-    // (e.g. onboarding not finished), the event is skipped with a log
-    // warning rather than silently notifying the wrong (or no) account.
+    // Final stage — now the Admin's (it was the HR Manager's). Resolves the employee's actual
+    // User.id via UserRepository before publishing the event. If no login account exists for
+    // this employee, the event is skipped with a log warning rather than notifying the wrong account.
     @PutMapping("/{leaveRequestId}/approve-by-hr")
-    @PreAuthorize("hasAnyRole('HR_MANAGER', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('HR_MANAGER', 'SUPER_ADMIN', 'ADMIN')")
     @Auditable(action = "LEAVE_APPROVED_BY_HR", entityType = "LeaveRequest")
     public ApiResponse<LeaveRequestResponse> approveByHr(
             @PathVariable Long leaveRequestId, @RequestBody LeaveApprovalRequest request
@@ -99,7 +98,7 @@ public class LeaveController {
     }
 
     @GetMapping("/pending/hr")
-    @PreAuthorize("hasAnyRole('HR_MANAGER', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('HR_MANAGER', 'SUPER_ADMIN', 'ADMIN')")
     public ApiResponse<List<LeaveRequestResponse>> getPendingHrApprovals() {
         return ApiResponse.success(leaveService.getPendingHrApprovals());
     }
