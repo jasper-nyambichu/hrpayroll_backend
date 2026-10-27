@@ -26,11 +26,14 @@ import com.company.hrpayroll.repository.payroll.AgentPayrollSummaryRepository;
 import com.company.hrpayroll.repository.payroll.PayrollRunRepository;
 import com.company.hrpayroll.repository.payroll.PayslipRepository;
 import com.company.hrpayroll.service.agentadvance.AgentAdvanceService;
+import com.company.hrpayroll.service.damage.DamageService;
+import com.company.hrpayroll.service.dayswork.DaysWorkedService;
 import com.company.hrpayroll.service.loan.LoanService;
 import com.company.hrpayroll.service.payroll.agentformula.AgentPayrollCalculationService;
 import com.company.hrpayroll.service.payroll.batch.PayrollLockService;
 import com.company.hrpayroll.service.payroll.batch.PayrollRunService;
 import com.company.hrpayroll.service.payroll.engine.PayrollCalculationService;
+import com.company.hrpayroll.service.payroll.engine.PayslipCalculation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -58,6 +62,8 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     private final AgentPayrollCalculationService agentPayrollCalculationService;
     private final LoanService loanService;
     private final AgentAdvanceService agentAdvanceService;
+    private final DamageService damageService;
+    private final DaysWorkedService daysWorkedService;
 
     private final PayrollRunMapper payrollRunMapper;
     private final PayslipMapper payslipMapper;
@@ -98,6 +104,10 @@ public class PayrollRunServiceImpl implements PayrollRunService {
         // a run while we look for periods that were already paid.
         rejectOverlappingPayroll(employees, request);
 
+        // Payroll works from the days the Back Office locked for exactly this period; anyone without
+        // a locked figure cannot be paid, so the run is refused before anything is created.
+        Map<Long, Integer> lockedDays = requireLockedDays(employees, request);
+
         PayrollRun run = PayrollRun.builder()
                 .periodStart(request.periodStart())
                 .periodEnd(request.periodEnd())
@@ -109,14 +119,15 @@ public class PayrollRunServiceImpl implements PayrollRunService {
                 .build();
         run = payrollRunRepository.save(run);
 
-        // 1. Calculate and save a payslip per employee, applying any loan
-        //    deductions it produced.
+        // 1. Calculate and save a payslip per employee, then record the loan instalments and
+        //    damages it took (only now that the payslip is safely saved).
         List<Payslip> payslips = new ArrayList<>();
         for (Employee employee : employees) {
-            Payslip payslip = payrollCalculationService.calculateForEmployee(employee, run);
-            Payslip savedPayslip = payslipRepository.save(payslip);
+            PayslipCalculation calculation = payrollCalculationService.calculate(
+                    employee, run, lockedDays.get(employee.getId()));
+            Payslip savedPayslip = payslipRepository.save(calculation.payslip());
             payslips.add(savedPayslip);
-            applyLoanDeductionsFor(employee, run);
+            applyDeductionsFor(calculation, run);
         }
 
         // 2. Group employees by agent and build one AgentPayrollSummary per
@@ -248,10 +259,40 @@ public class PayrollRunServiceImpl implements PayrollRunService {
         eventPublisher.publishEvent(new PayrollCompletedEvent(run.getId(), userIds));
     }
 
-    private void applyLoanDeductionsFor(Employee employee, PayrollRun run) {
-        loanService.getActiveDeductionsForEmployees(List.of(employee.getId()))
-                .forEach(deduction -> loanService.applyDeduction(
-                        deduction.loanId(), run.getId(), deduction.installmentAmount()));
+    // Records what the payslip actually took: the loan instalments (a deduction ceiling may have
+    // reduced them) and the damages, which are marked deducted against this run.
+    private void applyDeductionsFor(PayslipCalculation calculation, PayrollRun run) {
+        calculation.loanDeductions().forEach(deduction -> loanService.applyDeduction(
+                deduction.loanId(), run.getId(), deduction.installmentAmount()));
+
+        calculation.damageIds().forEach(damageId -> damageService.markDeducted(damageId, run.getId()));
+    }
+
+    // Every employee in the scope needs a locked days-worked figure for exactly the run's period.
+    private Map<Long, Integer> requireLockedDays(List<Employee> employees, PayrollRunRequest request) {
+        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
+
+        Map<Long, Integer> locked = daysWorkedService.getLockedDays(
+                employeeIds, request.periodStart(), request.periodEnd());
+
+        List<Employee> missing = employees.stream()
+                .filter(employee -> !locked.containsKey(employee.getId()))
+                .toList();
+
+        if (missing.isEmpty()) {
+            return locked;
+        }
+
+        String examples = missing.stream()
+                .limit(3)
+                .map(Employee::getEmployeeNumber)
+                .collect(Collectors.joining(", "));
+
+        throw new InvalidOperationException(
+                missing.size() + " employee(s) have no locked days worked for "
+                        + request.periodStart() + " to " + request.periodEnd()
+                        + " (e.g. " + examples + "). The Back Office must lock the days for those branches "
+                        + "for exactly this period before payroll can run.");
     }
 
     private List<AgentPayrollSummary> calculateAndSaveAgentSummaries(

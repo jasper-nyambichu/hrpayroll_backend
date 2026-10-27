@@ -4,93 +4,134 @@ package com.company.hrpayroll.service.payroll.engine.impl;
 import com.company.hrpayroll.entity.attendance.Attendance;
 import com.company.hrpayroll.entity.company.CompanySettings;
 import com.company.hrpayroll.entity.employee.Employee;
-import com.company.hrpayroll.entity.leave.LeaveRequest;
-import com.company.hrpayroll.entity.leave.LeaveStatus;
-import com.company.hrpayroll.entity.leave.LeaveType;
 import com.company.hrpayroll.entity.payroll.PayrollRun;
 import com.company.hrpayroll.entity.payroll.Payslip;
+import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.company.CompanySettingsRepository;
-import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
-import com.company.hrpayroll.repository.leave.LeaveTypeRepository;
+import com.company.hrpayroll.service.damage.DamageService;
+import com.company.hrpayroll.service.dayswork.DaysWorkedService;
 import com.company.hrpayroll.service.loan.LoanService;
 import com.company.hrpayroll.service.payroll.engine.PayrollCalculationService;
+import com.company.hrpayroll.service.payroll.engine.PayslipCalculation;
 import com.company.hrpayroll.service.payroll.engine.StatutoryDeductionCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.DayOfWeek;
 import java.time.Duration;
-import java.time.LocalDate;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class PayrollCalculationServiceImpl implements PayrollCalculationService {
 
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
+
     private final AttendanceRepository attendanceRepository;
     private final CompanySettingsRepository companySettingsRepository;
-    private final LeaveRequestRepository leaveRequestRepository;
-    private final LeaveTypeRepository leaveTypeRepository;
     private final StatutoryDeductionCalculator statutoryDeductionCalculator;
     private final LoanService loanService;
+    private final DamageService damageService;
+    private final DaysWorkedService daysWorkedService;
 
     @Override
-    public Payslip calculateForEmployee(Employee employee, PayrollRun run) {
+    public PayslipCalculation calculate(Employee employee, PayrollRun run, int daysWorked) {
         CompanySettings settings = currentSettings();
 
-        BigDecimal overtimePay = calculateOvertimePay(employee, run, settings);
-        BigDecimal unpaidLeaveDeduction = calculateUnpaidLeaveDeduction(employee, run, settings);
+        // Pay for the days the Back Office locked: 30 days x 1,000 = 30,000.
+        BigDecimal dailyRate = settings.getDailyRate();
+        BigDecimal basePay = dailyRate.multiply(BigDecimal.valueOf(daysWorked)).setScale(2, RoundingMode.HALF_UP);
 
-        // House/transport/bonus/other allowances are not yet modeled as
-        // recurring per-employee amounts (Employee only stores basicSalary
-        // today). They default to zero here — once an EmployeeAllowance
-        // structure exists, this is the one method that needs to change.
+        BigDecimal overtimePay = calculateOvertimePay(employee, run, settings);
+
+        // House/transport/bonus/other allowances are not yet modeled as recurring per-employee
+        // amounts. They default to zero here — once an EmployeeAllowance structure exists, this is
+        // the one method that needs to change.
         BigDecimal houseAllowance = BigDecimal.ZERO;
         BigDecimal transportAllowance = BigDecimal.ZERO;
         BigDecimal bonus = BigDecimal.ZERO;
         BigDecimal otherAllowances = BigDecimal.ZERO;
 
-        // Unpaid leave reduces what the employee actually earned, so it comes off
-        // BEFORE gross — SHIF, NSSF, the levy and PAYE are all worked on real pay.
-        BigDecimal grossPay = employee.getBasicSalary()
-                .subtract(unpaidLeaveDeduction)
+        // An unworked day is simply not paid, so there is no separate unpaid-leave deduction any more.
+        BigDecimal unpaidLeaveDeduction = BigDecimal.ZERO;
+
+        BigDecimal grossPay = basePay
                 .add(houseAllowance)
                 .add(transportAllowance)
                 .add(overtimePay)
                 .add(bonus)
                 .add(otherAllowances);
 
-        BigDecimal shif = statutoryDeductionCalculator.calculateShif(grossPay);
-        BigDecimal nssf = statutoryDeductionCalculator.calculateNssf(grossPay);
-        BigDecimal housingLevy = statutoryDeductionCalculator.calculateHousingLevy(grossPay);
-        BigDecimal nita = statutoryDeductionCalculator.calculateNita();
-        BigDecimal paye = statutoryDeductionCalculator.calculatePaye(grossPay, nssf, shif, housingLevy);
+        // SHIF and NSSF as the Admin set them (a percentage of pay, or a fixed amount). The owner's
+        // formula ADDS them to the pay: 30,000 + SHIF + NSSF = total employee salary. They are not
+        // taken out of what the employee receives.
+        BigDecimal shif = statutoryDeductionCalculator.calculateConfigured(grossPay, settings.getShifMode(), settings.getShifValue());
+        BigDecimal nssf = statutoryDeductionCalculator.calculateConfigured(grossPay, settings.getNssfMode(), settings.getNssfValue());
+        BigDecimal totalEmployeeSalary = grossPay.add(shif).add(nssf);
 
-        BigDecimal loanDeduction = loanService.getActiveDeductionsForEmployees(List.of(employee.getId())).stream()
-                .map(LoanService.LoanDeductionResult::installmentAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // The other statutory items are switches the Admin turns on; off, they are zero.
+        BigDecimal housingLevy = settings.isApplyHousingLevy()
+                ? statutoryDeductionCalculator.calculateHousingLevy(grossPay) : BigDecimal.ZERO;
+        BigDecimal paye = settings.isApplyPaye()
+                ? statutoryDeductionCalculator.calculatePaye(grossPay, nssf, shif, housingLevy) : BigDecimal.ZERO;
+        // NITA is an EMPLOYER levy: recorded for remittance, never taken out of the employee's pay.
+        BigDecimal nita = settings.isApplyNita() ? statutoryDeductionCalculator.calculateNita() : BigDecimal.ZERO;
 
         BigDecimal otherDeductions = BigDecimal.ZERO;
 
-        // NITA is an EMPLOYER levy: it is recorded on the payslip (nitaDeduction)
-        // for remittance, but it is NOT taken out of the employee's pay.
-        BigDecimal totalDeductions = shif.add(nssf).add(housingLevy).add(paye)
-                .add(loanDeduction).add(otherDeductions);
+        // Deduction ceiling: tax and levy always come off; loans and damages share what is left of
+        // the ceiling (a percentage of gross pay), loans first.
+        BigDecimal mandatory = housingLevy.add(paye).add(otherDeductions);
+        BigDecimal ceiling = grossPay.multiply(settings.getDeductionCeilingPercent())
+                .divide(HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal remaining = ceiling.subtract(mandatory).max(BigDecimal.ZERO);
+
+        List<LoanService.LoanDeductionResult> appliedLoans = new ArrayList<>();
+        BigDecimal loanDeduction = BigDecimal.ZERO;
+        for (LoanService.LoanDeductionResult due : loanService.getActiveDeductionsForEmployees(List.of(employee.getId()))) {
+            BigDecimal amount = due.installmentAmount().min(remaining);
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            appliedLoans.add(new LoanService.LoanDeductionResult(due.loanId(), due.employeeId(), amount));
+            loanDeduction = loanDeduction.add(amount);
+            remaining = remaining.subtract(amount);
+        }
+
+        // Damages the employee agreed to (or that were overridden), oldest first. A damage is taken
+        // whole or not at all: one that does not fit under the ceiling waits for the next run.
+        List<Long> deductedDamageIds = new ArrayList<>();
+        BigDecimal damageDeduction = BigDecimal.ZERO;
+        List<DamageService.DamageDeductionResult> approvedDamages =
+                damageService.getApprovedDeductionsForEmployees(List.of(employee.getId())).stream()
+                        .sorted(Comparator.comparing(DamageService.DamageDeductionResult::damageId))
+                        .toList();
+        for (DamageService.DamageDeductionResult damage : approvedDamages) {
+            if (damage.amount().compareTo(remaining) > 0) {
+                continue;
+            }
+            deductedDamageIds.add(damage.damageId());
+            damageDeduction = damageDeduction.add(damage.amount());
+            remaining = remaining.subtract(damage.amount());
+        }
+
+        BigDecimal totalDeductions = housingLevy.add(paye)
+                .add(loanDeduction).add(damageDeduction).add(otherDeductions);
 
         BigDecimal netPay = grossPay.subtract(totalDeductions).setScale(2, RoundingMode.HALF_UP);
 
-        return Payslip.builder()
+        Payslip payslip = Payslip.builder()
                 .payrollRunId(run.getId())
                 .employeeId(employee.getId())
-                .basicSalary(employee.getBasicSalary())
+                .daysWorked(daysWorked)
+                .dailyRate(dailyRate)
+                .basicSalary(basePay)
                 .houseAllowance(houseAllowance)
                 .transportAllowance(transportAllowance)
                 .overtimePay(overtimePay)
@@ -104,9 +145,28 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
                 .payeDeduction(paye)
                 .nitaDeduction(nita)
                 .loanDeduction(loanDeduction)
+                .damageDeduction(damageDeduction)
                 .otherDeductions(otherDeductions)
+                .totalEmployeeSalary(totalEmployeeSalary)
                 .netPay(netPay)
                 .build();
+
+        return new PayslipCalculation(payslip, appliedLoans, deductedDamageIds);
+    }
+
+    @Override
+    public Payslip calculateForEmployee(Employee employee, PayrollRun run) {
+        Map<Long, Integer> locked = daysWorkedService.getLockedDays(
+                List.of(employee.getId()), run.getPeriodStart(), run.getPeriodEnd());
+
+        Integer daysWorked = locked.get(employee.getId());
+        if (daysWorked == null) {
+            throw new InvalidOperationException(
+                    "Days worked have not been locked for " + employee.getFullName() + " for "
+                            + run.getPeriodStart() + " to " + run.getPeriodEnd());
+        }
+
+        return calculate(employee, run, daysWorked).payslip();
     }
 
     @Override
@@ -116,9 +176,8 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
                 .toList();
     }
 
-    // Overtime pay = hours worked under an OVERTIME-status attendance record,
-    // valued at (basic salary / standard hours in the period) x the
-    // overtime multiplier from company settings.
+    // Overtime pay = hours worked under an OVERTIME-status attendance record, valued at
+    // (daily rate / standard hours in a day) x the overtime multiplier from company settings.
     private BigDecimal calculateOvertimePay(Employee employee, PayrollRun run, CompanySettings settings) {
         List<Attendance> overtimeRecords = attendanceRepository
                 .findByEmployeeIdAndAttendanceDateBetween(employee.getId(), run.getPeriodStart(), run.getPeriodEnd())
@@ -130,99 +189,22 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
             return BigDecimal.ZERO;
         }
 
+        Double hoursPerDay = settings.getDefaultWorkingHoursPerDay();
+        if (hoursPerDay == null || hoursPerDay <= 0) {
+            return BigDecimal.ZERO;
+        }
+
         double totalOvertimeHours = overtimeRecords.stream()
                 .mapToDouble(a -> Duration.between(a.getClockIn(), a.getClockOut()).toMinutes() / 60.0)
                 .sum();
 
-        int workingDaysInPeriod = countWorkingDays(run.getPeriodStart(), run.getPeriodEnd(), settings.getWeekendDays());
-        if (workingDaysInPeriod == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal totalStandardHours = BigDecimal.valueOf(settings.getDefaultWorkingHoursPerDay())
-                .multiply(BigDecimal.valueOf(workingDaysInPeriod));
-
-        if (totalStandardHours.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal hourlyRate = employee.getBasicSalary().divide(totalStandardHours, 4, RoundingMode.HALF_UP);
+        BigDecimal hourlyRate = settings.getDailyRate()
+                .divide(BigDecimal.valueOf(hoursPerDay), 4, RoundingMode.HALF_UP);
         BigDecimal overtimeMultiplier = BigDecimal.valueOf(settings.getOvertimeMultiplier());
 
         return hourlyRate.multiply(BigDecimal.valueOf(totalOvertimeHours))
                 .multiply(overtimeMultiplier)
                 .setScale(2, RoundingMode.HALF_UP);
-    }
-
-    // Approved leave of a type with paid = false (e.g. UNPAID) that falls inside
-    // the period is not paid. Each unpaid WORKING day costs
-    // basic / working days in the period; the run is assumed to cover one pay
-    // period (company_settings.payrollPeriod = MONTHLY). Days are collected in a
-    // set so two overlapping leave requests never deduct the same day twice, and
-    // the deduction can never exceed the basic salary.
-    private BigDecimal calculateUnpaidLeaveDeduction(Employee employee, PayrollRun run, CompanySettings settings) {
-        int workingDaysInPeriod = countWorkingDays(run.getPeriodStart(), run.getPeriodEnd(), settings.getWeekendDays());
-        if (workingDaysInPeriod == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        Set<DayOfWeek> weekendDays = parseWeekendDays(settings.getWeekendDays());
-        Set<LocalDate> unpaidDays = new HashSet<>();
-
-        List<LeaveRequest> approvedLeave = leaveRequestRepository
-                .findByEmployeeIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
-                        employee.getId(), LeaveStatus.APPROVED, run.getPeriodEnd(), run.getPeriodStart());
-
-        for (LeaveRequest leave : approvedLeave) {
-            boolean paid = leaveTypeRepository.findById(leave.getLeaveTypeId())
-                    .map(LeaveType::isPaid)
-                    .orElse(true);
-            if (paid) {
-                continue;
-            }
-
-            LocalDate from = leave.getStartDate().isAfter(run.getPeriodStart()) ? leave.getStartDate() : run.getPeriodStart();
-            LocalDate to = leave.getEndDate().isBefore(run.getPeriodEnd()) ? leave.getEndDate() : run.getPeriodEnd();
-
-            for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
-                if (!weekendDays.contains(date.getDayOfWeek())) {
-                    unpaidDays.add(date);
-                }
-            }
-        }
-
-        if (unpaidDays.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal deduction = employee.getBasicSalary()
-                .multiply(BigDecimal.valueOf(unpaidDays.size()))
-                .divide(BigDecimal.valueOf(workingDaysInPeriod), 2, RoundingMode.HALF_UP);
-
-        return deduction.min(employee.getBasicSalary());
-    }
-
-    // Uses CompanySettings.weekendDays (e.g. "SATURDAY,SUNDAY") so working-day
-    // math respects whatever the company has actually configured, rather
-    // than assuming a fixed number of working days per month.
-    private int countWorkingDays(LocalDate start, LocalDate end, String weekendDaysCsv) {
-        Set<DayOfWeek> weekendDays = parseWeekendDays(weekendDaysCsv);
-
-        int count = 0;
-        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-            if (!weekendDays.contains(date.getDayOfWeek())) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private Set<DayOfWeek> parseWeekendDays(String weekendDaysCsv) {
-        return Arrays.stream(weekendDaysCsv.split(","))
-                .map(String::trim)
-                .map(String::toUpperCase)
-                .map(DayOfWeek::valueOf)
-                .collect(Collectors.toSet());
     }
 
     private CompanySettings currentSettings() {

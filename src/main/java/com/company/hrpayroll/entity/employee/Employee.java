@@ -73,7 +73,8 @@ public class Employee extends BaseEntity {
     @Column(nullable = false, length = 20)
     private EmploymentType employmentType;
 
-    @Column(nullable = false, precision = 15, scale = 2)
+    // Retired: payroll now pays days worked x the daily rate. Kept (nullable) for older records.
+    @Column(precision = 15, scale = 2)
     private BigDecimal basicSalary;
 
     private LocalDate dateHired;

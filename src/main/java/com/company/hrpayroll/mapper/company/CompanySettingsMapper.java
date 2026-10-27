@@ -23,6 +23,33 @@ public class CompanySettingsMapper {
         if (dto.payrollPeriod() != null) {
             settings.setPayrollPeriod(dto.payrollPeriod());
         }
+        if (dto.dailyRate() != null) {
+            settings.setDailyRate(dto.dailyRate());
+        }
+        if (dto.shifMode() != null) {
+            settings.setShifMode(dto.shifMode());
+        }
+        if (dto.shifValue() != null) {
+            settings.setShifValue(dto.shifValue());
+        }
+        if (dto.nssfMode() != null) {
+            settings.setNssfMode(dto.nssfMode());
+        }
+        if (dto.nssfValue() != null) {
+            settings.setNssfValue(dto.nssfValue());
+        }
+        if (dto.applyHousingLevy() != null) {
+            settings.setApplyHousingLevy(dto.applyHousingLevy());
+        }
+        if (dto.applyPaye() != null) {
+            settings.setApplyPaye(dto.applyPaye());
+        }
+        if (dto.applyNita() != null) {
+            settings.setApplyNita(dto.applyNita());
+        }
+        if (dto.deductionCeilingPercent() != null) {
+            settings.setDeductionCeilingPercent(dto.deductionCeilingPercent());
+        }
     }
 
     public CompanySettingsResponse toCompanySettingsResponse(CompanySettings settings) {
@@ -32,7 +59,16 @@ public class CompanySettingsMapper {
                 settings.getDefaultWorkingHoursPerDay(),
                 settings.getOvertimeMultiplier(),
                 settings.getWeekendDays(),
-                settings.getPayrollPeriod()
+                settings.getPayrollPeriod(),
+                settings.getDailyRate(),
+                settings.getShifMode(),
+                settings.getShifValue(),
+                settings.getNssfMode(),
+                settings.getNssfValue(),
+                settings.isApplyHousingLevy(),
+                settings.isApplyPaye(),
+                settings.isApplyNita(),
+                settings.getDeductionCeilingPercent()
         );
     }
 }

@@ -9,5 +9,14 @@ public record CompanySettingsResponse(
         Double defaultWorkingHoursPerDay,
         Double overtimeMultiplier,
         String weekendDays,
-        String payrollPeriod
+        String payrollPeriod,
+        BigDecimal dailyRate,
+        String shifMode,
+        BigDecimal shifValue,
+        String nssfMode,
+        BigDecimal nssfValue,
+        boolean applyHousingLevy,
+        boolean applyPaye,
+        boolean applyNita,
+        BigDecimal deductionCeilingPercent
 ) {}

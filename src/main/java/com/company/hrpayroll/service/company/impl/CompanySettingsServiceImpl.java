@@ -73,16 +73,36 @@ public class CompanySettingsServiceImpl implements CompanySettingsService {
 
         String weekendDays = request.weekendDays() != null ? normalizeWeekendDays(request.weekendDays()) : null;
 
+        if (request.dailyRate() != null && request.dailyRate().compareTo(MAX_AMOUNT) > 0) {
+            throw new InvalidOperationException("Daily rate is too large");
+        }
+
+        String shifMode = normalizeMode(request.shifMode(), "SHIF");
+        String nssfMode = normalizeMode(request.nssfMode(), "NSSF");
+        checkContribution("SHIF", request.shifValue(), shifMode != null ? shifMode : savedMode(true));
+        checkContribution("NSSF", request.nssfValue(), nssfMode != null ? nssfMode : savedMode(false));
+
         return new CompanySettingsUpdateRequest(
                 request.vatRate(),
                 hours,
                 overtime,
                 weekendDays,
-                period != null ? "MONTHLY" : null
+                period != null ? "MONTHLY" : null,
+                request.dailyRate(),
+                shifMode,
+                request.shifValue(),
+                nssfMode,
+                request.nssfValue(),
+                request.applyHousingLevy(),
+                request.applyPaye(),
+                request.applyNita(),
+                request.deductionCeilingPercent()
         );
     }
 
-    // The column holds 20 characters, which fits at most two weekend days.
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000");
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
+
     private String normalizeWeekendDays(String raw) {
         List<String> days = Arrays.stream(raw.split(","))
                 .map(String::trim)
@@ -108,6 +128,39 @@ public class CompanySettingsServiceImpl implements CompanySettingsService {
         }
 
         return days.stream().collect(Collectors.joining(","));
+    }
+
+    // PERCENT or FIXED; null means "leave it as it is".
+    private String normalizeMode(String raw, String label) {
+        if (raw == null) {
+            return null;
+        }
+        String mode = raw.trim().toUpperCase();
+        if (!mode.equals("PERCENT") && !mode.equals("FIXED")) {
+            throw new InvalidOperationException(label + " must be either a PERCENT of pay or a FIXED amount");
+        }
+        return mode;
+    }
+
+    // A percentage cannot exceed 100; a fixed amount cannot be absurdly large. When only the value is
+    // sent, it is checked against the mode already saved.
+    private void checkContribution(String label, BigDecimal value, String effectiveMode) {
+        if (value == null) {
+            return;
+        }
+        if ("PERCENT".equals(effectiveMode) && value.compareTo(HUNDRED) > 0) {
+            throw new InvalidOperationException(label + " cannot be more than 100% of pay");
+        }
+        if ("FIXED".equals(effectiveMode) && value.compareTo(MAX_AMOUNT) > 0) {
+            throw new InvalidOperationException(label + " amount is too large");
+        }
+    }
+
+    // The mode currently saved for SHIF (true) or NSSF (false); PERCENT before settings exist.
+    private String savedMode(boolean shif) {
+        return companySettingsRepository.findAll().stream().findFirst()
+                .map(settings -> shif ? settings.getShifMode() : settings.getNssfMode())
+                .orElse("PERCENT");
     }
 
     private CompanySettings newSettingsForCompany() {

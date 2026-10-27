@@ -14,6 +14,8 @@ public record PayslipResponse(
         Long employeeId,
         String employeeName,
         String employeeNumber,
+        int daysWorked,
+        BigDecimal dailyRate,
         BigDecimal basicSalary,
         BigDecimal houseAllowance,
         BigDecimal transportAllowance,
@@ -28,6 +30,8 @@ public record PayslipResponse(
         BigDecimal payeDeduction,
         BigDecimal nitaDeduction,
         BigDecimal loanDeduction,
+        BigDecimal damageDeduction,
         BigDecimal otherDeductions,
+        BigDecimal totalEmployeeSalary,
         BigDecimal netPay
 ) {}

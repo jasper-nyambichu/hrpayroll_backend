@@ -38,6 +38,24 @@ public class StatutoryDeductionCalculator {
 
     private static final BigDecimal PERSONAL_RELIEF = new BigDecimal("2400");
 
+    /**
+     * SHIF and NSSF as the Admin has set them: either a PERCENT of the pay, or a FIXED amount per
+     * payslip. Nothing is charged on a payslip with no pay (no days worked). This replaces the
+     * hard-coded rates below for the days x rate pay model; calculateShif / calculateNssf remain
+     * only as a record of the statutory scales.
+     */
+    public BigDecimal calculateConfigured(BigDecimal pay, String mode, BigDecimal value) {
+        if (pay == null || pay.compareTo(BigDecimal.ZERO) <= 0 || value == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal amount = "FIXED".equals(mode)
+                ? value
+                : pay.multiply(value).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
     public BigDecimal calculateShif(BigDecimal grossPay) {
         BigDecimal computed = grossPay.multiply(SHIF_RATE).setScale(2, RoundingMode.HALF_UP);
         return computed.max(SHIF_MINIMUM);

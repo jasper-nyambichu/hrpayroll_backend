@@ -19,6 +19,8 @@ public class PayslipMapper {
                 payslip.getEmployeeId(),
                 employee != null ? employee.getFullName() : null,
                 employee != null ? employee.getEmployeeNumber() : null,
+                payslip.getDaysWorked(),
+                payslip.getDailyRate(),
                 payslip.getBasicSalary(),
                 payslip.getHouseAllowance(),
                 payslip.getTransportAllowance(),
@@ -33,7 +35,9 @@ public class PayslipMapper {
                 payslip.getPayeDeduction(),
                 payslip.getNitaDeduction(),
                 payslip.getLoanDeduction(),
+                payslip.getDamageDeduction(),
                 payslip.getOtherDeductions(),
+                payslip.getTotalEmployeeSalary(),
                 payslip.getNetPay()
         );
     }
