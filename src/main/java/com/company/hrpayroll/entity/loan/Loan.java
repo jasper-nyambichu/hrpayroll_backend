@@ -40,7 +40,10 @@ public class Loan extends BaseEntity {
     private LocalDate requestDate;
     private LocalDate approvalDate;
 
+    // Set when an agent raised the loan for one of their employees, so the agent can be told how it ended.
+    private Long requestedByAgentId;
+
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "PENDING"; // PENDING, APPROVED, REJECTED, CLOSED
-}
+}

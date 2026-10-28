@@ -3,6 +3,7 @@ package com.company.hrpayroll.dto.response.agentadvance;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public record AgentAdvanceResponse(
         Long id,
@@ -12,5 +13,8 @@ public record AgentAdvanceResponse(
         LocalDate advanceDate,
         String purpose,
         BigDecimal outstandingBalance,
-        String status
+        String status,
+        boolean requestedByAgent,
+        String rejectionReason,
+        LocalDateTime decidedAt
 ) {}

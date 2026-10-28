@@ -15,11 +15,14 @@ import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.loan.LoanRepaymentRepository;
 import com.company.hrpayroll.repository.loan.LoanRepository;
 import com.company.hrpayroll.service.loan.LoanService;
+import com.company.hrpayroll.service.notification.NotificationRecipients;
+import com.company.hrpayroll.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -30,9 +33,42 @@ public class LoanServiceImpl implements LoanService {
     private final EmployeeRepository employeeRepository;
     private final LoanMapper loanMapper;
     private final BusinessClock businessClock;
+    private final NotificationService notificationService;
+    private final NotificationRecipients recipients;
+
+    private static final String TYPE_AGENT_REQUESTED = "AGENT_LOAN_REQUESTED";
+    private static final String TYPE_AGENT_APPROVED = "AGENT_LOAN_APPROVED";
+    private static final String TYPE_AGENT_REJECTED = "AGENT_LOAN_REJECTED";
 
     @Override
     public LoanResponse requestLoan(LoanRequest request) {
+        return createLoan(request, null);
+    }
+
+    @Override
+    public LoanResponse requestLoanForAgent(LoanRequest request, Long agentId) {
+        Employee employee = employeeRepository.findById(request.employeeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with id: " + request.employeeId()));
+
+        // An agent can only ask for a loan for staff they supply, and only for active staff.
+        if (!agentId.equals(employee.getAgentId())) {
+            throw new InvalidOperationException("You can only request a loan for an employee you supply");
+        }
+        if (!"ACTIVE".equals(employee.getEmploymentStatus())) {
+            throw new InvalidOperationException("A loan can only be requested for an active employee");
+        }
+
+        LoanResponse response = createLoan(request, agentId);
+
+        String message = "A loan of " + kes(request.principalAmount()) + " was requested for "
+                + employee.getFullName() + ". Review and decide.";
+        recipients.admins().forEach(admin ->
+                notificationService.notifyInApp(admin.getId(), TYPE_AGENT_REQUESTED, message, response.id()));
+
+        return response;
+    }
+
+    private LoanResponse createLoan(LoanRequest request, Long requestedByAgentId) {
         if (!employeeRepository.existsById(request.employeeId())) {
             throw new ResourceNotFoundException("Employee not found with id: " + request.employeeId());
         }
@@ -47,6 +83,7 @@ public class LoanServiceImpl implements LoanService {
         }
 
         loan.setRequestDate(businessClock.today());
+        loan.setRequestedByAgentId(requestedByAgentId);
         Loan saved = loanRepository.save(loan);
         return toResponseWithEmployeeName(saved);
     }
@@ -73,6 +110,7 @@ public class LoanServiceImpl implements LoanService {
         loan.setStatus("APPROVED");
         loan.setApprovalDate(businessClock.today());
         Loan saved = loanRepository.save(loan);
+        settleAgentRequest(saved, true);
         return toResponseWithEmployeeName(saved);
     }
 
@@ -84,12 +122,29 @@ public class LoanServiceImpl implements LoanService {
         }
         loan.setStatus("REJECTED");
         Loan saved = loanRepository.save(loan);
+        settleAgentRequest(saved, false);
         return toResponseWithEmployeeName(saved);
     }
 
     @Override
     public List<LoanResponse> getLoansForEmployee(Long employeeId) {
         return loanRepository.findByEmployeeId(employeeId).stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId()))
+                .map(this::toResponseWithEmployeeName)
+                .toList();
+    }
+
+    @Override
+    public List<LoanResponse> getLoansForAgent(Long agentId) {
+        List<Long> employeeIds = employeeRepository.findByAgentId(agentId).stream()
+                .map(Employee::getId)
+                .toList();
+
+        if (employeeIds.isEmpty()) {
+            return List.of();
+        }
+
+        return loanRepository.findByEmployeeIdIn(employeeIds).stream()
                 .sorted((a, b) -> b.getId().compareTo(a.getId()))
                 .map(this::toResponseWithEmployeeName)
                 .toList();
@@ -153,6 +208,30 @@ public class LoanServiceImpl implements LoanService {
         loanRepaymentRepository.save(repayment);
     }
 
+    // A loan an agent raised has been decided: clear the Admins' "review" notices and tell the agent how it ended.
+    private void settleAgentRequest(Loan loan, boolean approved) {
+        if (loan.getRequestedByAgentId() == null) {
+            return;
+        }
+
+        notificationService.resolveByReference(TYPE_AGENT_REQUESTED, loan.getId());
+
+        String employeeName = employeeRepository.findById(loan.getEmployeeId())
+                .map(Employee::getFullName).orElse("your employee");
+        String message = approved
+                ? "The loan of " + kes(loan.getPrincipalAmount()) + " for " + employeeName
+                        + " was approved. It will be deducted from their pay automatically."
+                : "The loan of " + kes(loan.getPrincipalAmount()) + " for " + employeeName + " was rejected.";
+
+        recipients.agentLogin(loan.getRequestedByAgentId()).ifPresent(agentUser ->
+                notificationService.notifyInApp(
+                        agentUser.getId(), approved ? TYPE_AGENT_APPROVED : TYPE_AGENT_REJECTED, message, loan.getId()));
+    }
+
+    private static String kes(BigDecimal amount) {
+        return String.format(Locale.US, "KES %,.2f", amount);
+    }
+
     private Loan findOrThrow(Long id) {
         return loanRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Loan not found with id: " + id));
@@ -163,4 +242,4 @@ public class LoanServiceImpl implements LoanService {
                 .map(Employee::getFullName).orElse(null);
         return loanMapper.toLoanResponse(loan, employeeName);
     }
-}
+}

@@ -16,7 +16,11 @@ public interface AgentAdvanceRepository extends JpaRepository<AgentAdvance, Long
     // from the agent's next payroll payable amount.
     List<AgentAdvance> findByAgentIdAndStatusNot(Long agentId, String status);
 
+    List<AgentAdvance> findByAgentIdAndStatusIn(Long agentId, List<String> statuses);
+
+    // Only advances that were actually given: a PENDING or REJECTED request (one an agent asked for but
+    // the Admin has not approved) must never be taken off a payroll run.
     default List<AgentAdvance> findRecoverableByAgentId(Long agentId) {
-        return findByAgentIdAndStatusNot(agentId, "FULLY_RECOVERED");
+        return findByAgentIdAndStatusIn(agentId, List.of("OUTSTANDING", "PARTIALLY_RECOVERED"));
     }
-}
+}

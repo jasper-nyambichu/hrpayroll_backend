@@ -29,7 +29,10 @@ public class AgentAdvanceMapper {
                 advance.getAdvanceDate(),
                 advance.getPurpose(),
                 advance.getOutstandingBalance(),
-                advance.getStatus()
+                advance.getStatus(),
+                advance.isRequestedByAgent(),
+                advance.getRejectionReason(),
+                advance.getDecidedAt()
         );
     }
-}
+}

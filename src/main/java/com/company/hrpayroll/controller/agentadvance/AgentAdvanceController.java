@@ -3,7 +3,9 @@ package com.company.hrpayroll.controller.agentadvance;
 
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.agentadvance.AgentAdvanceRecoveryRequest;
+import com.company.hrpayroll.dto.request.agentadvance.AgentAdvanceRejectionRequest;
 import com.company.hrpayroll.dto.request.agentadvance.AgentAdvanceRequest;
+import com.company.hrpayroll.dto.request.agentadvance.AgentAdvanceSubmitRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.agentadvance.AgentAdvanceResponse;
 import com.company.hrpayroll.security.AccessGuard;
@@ -74,4 +76,32 @@ public class AgentAdvanceController {
     public ApiResponse<List<AgentAdvanceResponse>> getMyAdvances() {
         return ApiResponse.success(agentAdvanceService.getAdvancesByAgent(accessGuard.currentAgentId()));
     }
-}
+
+    // An agent asks the Admin for an advance. It is never recovered from payroll until the Admin approves it.
+    @PostMapping("/request")
+    @PreAuthorize("hasRole('AGENT')")
+    @Auditable(action = "AGENT_ADVANCE_REQUESTED", entityType = "AgentAdvance")
+    public ApiResponse<AgentAdvanceResponse> requestAdvance(@Valid @RequestBody AgentAdvanceSubmitRequest request) {
+        return ApiResponse.success("Advance request sent to the Administrator",
+                agentAdvanceService.requestAdvance(request, accessGuard.currentAgentId()));
+    }
+
+    // Deciding an advance request is the Admin's call (Super Admin's powers belong to Admin).
+    @PutMapping("/{advanceId}/approve")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "AGENT_ADVANCE_APPROVED", entityType = "AgentAdvance")
+    public ApiResponse<AgentAdvanceResponse> approveAdvance(@PathVariable Long advanceId) {
+        return ApiResponse.success("Advance approved",
+                agentAdvanceService.approveAdvance(advanceId, accessGuard.currentUserId()));
+    }
+
+    @PutMapping("/{advanceId}/reject")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "AGENT_ADVANCE_REJECTED", entityType = "AgentAdvance")
+    public ApiResponse<AgentAdvanceResponse> rejectAdvance(
+            @PathVariable Long advanceId, @Valid @RequestBody AgentAdvanceRejectionRequest request
+    ) {
+        return ApiResponse.success("Advance rejected",
+                agentAdvanceService.rejectAdvance(advanceId, request.reason(), accessGuard.currentUserId()));
+    }
+}

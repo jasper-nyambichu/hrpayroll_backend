@@ -102,4 +102,23 @@ public class LoanController {
     public ApiResponse<List<LoanResponse>> getMyLoans() {
         return ApiResponse.success(loanService.getLoansForEmployee(accessGuard.currentEmployeeId()));
     }
-}
+
+    // An agent asks for a loan for one of THEIR employees. The employee must belong to the signed-in agent
+    // (checked here and again in the service); the interest is dropped — the approver fixes it.
+    @PostMapping("/agent-request")
+    @PreAuthorize("hasRole('AGENT') and @accessGuard.isEmployeeOfMyAgent(#request.employeeId())")
+    @Auditable(action = "LOAN_REQUESTED_BY_AGENT", entityType = "Loan")
+    public ApiResponse<LoanResponse> requestLoanForMyEmployee(@Valid @RequestBody LoanRequest request) {
+        LoanRequest withoutInterest = new LoanRequest(
+                request.employeeId(), request.principalAmount(), null, request.installmentAmount());
+        return ApiResponse.success("Loan request sent to the Administrator",
+                loanService.requestLoanForAgent(withoutInterest, accessGuard.currentAgentId()));
+    }
+
+    // Agent Portal: the loans of every employee the agent supplies, with where each one stands.
+    @GetMapping("/my-agent-loans")
+    @PreAuthorize("hasRole('AGENT')")
+    public ApiResponse<List<LoanResponse>> getLoansOfMyEmployees() {
+        return ApiResponse.success(loanService.getLoansForAgent(accessGuard.currentAgentId()));
+    }
+}
