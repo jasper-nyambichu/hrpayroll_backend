@@ -13,6 +13,7 @@ import com.company.hrpayroll.mapper.dayswork.DaysWorkedMapper;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.dayswork.DaysWorkedRecordRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.repository.payroll.PayslipRepository;
 import com.company.hrpayroll.service.dayswork.DaysWorkedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
     private final DaysWorkedRecordRepository daysWorkedRecordRepository;
     private final AttendanceRepository attendanceRepository;
     private final EmployeeRepository employeeRepository;
+    private final PayslipRepository payslipRepository;
     private final DaysWorkedMapper daysWorkedMapper;
     private final BusinessClock businessClock;
 
@@ -65,7 +67,7 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
                     return record != null
                             ? daysWorkedMapper.toResponse(record, employee)
                             : daysWorkedMapper.toOpenResponse(
-                                    employee, periodStart, periodEnd, systemDays.getOrDefault(employee.getId(), 0));
+                            employee, periodStart, periodEnd, systemDays.getOrDefault(employee.getId(), 0));
                 })
                 .toList();
     }
@@ -149,6 +151,14 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
                 .findByBranchIdAndPeriodStartAndPeriodEnd(branchId, periodStart, periodEnd);
         if (records.isEmpty()) {
             throw new InvalidOperationException("No locked days found for this branch and period");
+        }
+
+        // Once payroll has paid any of these employees for the period, the figure is history:
+        // reopening it would let the days be changed after the money has moved.
+        List<Long> employeeIds = records.stream().map(DaysWorkedRecord::getEmployeeId).toList();
+        if (!payslipRepository.findEmployeeIdsPaidForOverlappingPeriod(employeeIds, periodStart, periodEnd).isEmpty()) {
+            throw new InvalidOperationException(
+                    "Payroll has already been run for this period, so its days worked can no longer be unlocked");
         }
         daysWorkedRecordRepository.deleteAll(records);
     }

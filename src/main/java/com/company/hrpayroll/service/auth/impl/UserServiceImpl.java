@@ -4,9 +4,11 @@ package com.company.hrpayroll.service.auth.impl;
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
+import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.exception.DuplicateResourceException;
 import com.company.hrpayroll.exception.InvalidCredentialsException;
+import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.auth.UserMapper;
 import com.company.hrpayroll.repository.auth.UserRepository;
@@ -15,11 +17,19 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+
+    // The six business roles new accounts can be created for. HR Manager, Auditor, Employee and
+    // Super Admin stay valid for accounts that already exist, but are no longer offered.
+    private static final Set<Role> CREATABLE_ROLES = EnumSet.of(
+            Role.ADMIN, Role.BRANCH_MANAGER, Role.AGENT,
+            Role.BACK_OFFICE, Role.PAYROLL_OFFICER, Role.FINANCE_OFFICER);
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
@@ -27,6 +37,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserSummaryResponse createUser(CreateUserRequest request) {
+        if (!CREATABLE_ROLES.contains(request.role())) {
+            throw new InvalidOperationException(
+                    "New accounts can only be created for Admin, Branch Manager, Agent, Back Office, "
+                            + "Payroll or Accounts Office roles");
+        }
+
         if (userRepository.existsByUsername(request.username())) {
             throw new DuplicateResourceException("Username '" + request.username() + "' is already taken");
         }
