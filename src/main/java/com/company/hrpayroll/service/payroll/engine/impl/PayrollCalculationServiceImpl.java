@@ -69,8 +69,9 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
                 .add(otherAllowances);
 
         // SHIF and NSSF as the Admin set them (a percentage of pay, or a fixed amount). The owner's
-        // formula ADDS them to the pay: 30,000 + SHIF + NSSF = total employee salary. They are not
-        // taken out of what the employee receives.
+        // formula ADDS them to the pay: 30,000 + SHIF + NSSF = total employee salary. The firm pays
+        // no pension, so the employee receives them as part of the salary and the company remits
+        // nothing for them.
         BigDecimal shif = statutoryDeductionCalculator.calculateConfigured(grossPay, settings.getShifMode(), settings.getShifValue());
         BigDecimal nssf = statutoryDeductionCalculator.calculateConfigured(grossPay, settings.getNssfMode(), settings.getNssfValue());
         BigDecimal totalEmployeeSalary = grossPay.add(shif).add(nssf);
@@ -86,9 +87,9 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
         BigDecimal otherDeductions = BigDecimal.ZERO;
 
         // Deduction ceiling: tax and levy always come off; loans and damages share what is left of
-        // the ceiling (a percentage of gross pay), loans first.
+        // the ceiling (a percentage of the total employee salary), loans first.
         BigDecimal mandatory = housingLevy.add(paye).add(otherDeductions);
-        BigDecimal ceiling = grossPay.multiply(settings.getDeductionCeilingPercent())
+        BigDecimal ceiling = totalEmployeeSalary.multiply(settings.getDeductionCeilingPercent())
                 .divide(HUNDRED, 2, RoundingMode.HALF_UP);
         BigDecimal remaining = ceiling.subtract(mandatory).max(BigDecimal.ZERO);
 
@@ -124,7 +125,9 @@ public class PayrollCalculationServiceImpl implements PayrollCalculationService 
         BigDecimal totalDeductions = housingLevy.add(paye)
                 .add(loanDeduction).add(damageDeduction).add(otherDeductions);
 
-        BigDecimal netPay = grossPay.subtract(totalDeductions).setScale(2, RoundingMode.HALF_UP);
+        // What the employee receives: the total salary (days x rate + SHIF + NSSF) less the loan
+        // instalment, approved damages and any switched-on tax.
+        BigDecimal netPay = totalEmployeeSalary.subtract(totalDeductions).setScale(2, RoundingMode.HALF_UP);
 
         Payslip payslip = Payslip.builder()
                 .payrollRunId(run.getId())

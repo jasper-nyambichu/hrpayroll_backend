@@ -12,6 +12,9 @@ public interface PayrollRunService {
     PayrollRunResponse runPayroll(PayrollRunRequest request, Long initiatedByUserId);
     PayrollRunResponse getRunById(Long payrollRunId);
 
+    // The payslips of one agent's employees in a run — the same statements Payroll and Admin see.
+    List<PayslipResponse> getPayslipsForAgentRun(Long payrollRunId, Long agentId);
+
     // Every run, newest period first.
     List<PayrollRunResponse> getAllRuns();
 

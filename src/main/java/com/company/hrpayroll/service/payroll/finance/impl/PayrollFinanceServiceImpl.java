@@ -89,10 +89,11 @@ public class PayrollFinanceServiceImpl implements PayrollFinanceService {
         BigDecimal directNita = decimal(direct, 7);
         BigDecimal agentPayable = decimal(agents, 2);
 
-        // Direct staff are paid net and their statutory amounts remitted by the company; agent staff
-        // are covered by the single agent payment, so their payslips are never added again.
-        BigDecimal totalCash = directNet.add(directPaye).add(directNssf).add(directShif)
-                .add(directLevy).add(directNita).add(agentPayable);
+        // Direct staff are paid their net salary, which already contains their SHIF and NSSF (the firm
+        // pays no pension, so there is nothing to remit for those). The company remits only the taxes
+        // that are switched on (PAYE, Housing Levy) and the employer NITA. Agent staff are covered by
+        // the single agent payment, so their payslips are never added again.
+        BigDecimal totalCash = directNet.add(directPaye).add(directLevy).add(directNita).add(agentPayable);
 
         return new FinanceRunSummaryResponse(
                 run.getId(),

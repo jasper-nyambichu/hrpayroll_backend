@@ -65,7 +65,7 @@ public class PayrollController {
     // One payslip. Staff with the read roles see any; an employee only their own,
     // verified against the payslip's real owner in the database (isOwnPayslip).
     @GetMapping("/payslips/{payslipId}")
-    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isOwnPayslip(#payslipId)")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isOwnPayslip(#payslipId) or @accessGuard.isPayslipOfMyAgent(#payslipId)")
     public ApiResponse<PayslipResponse> getPayslip(@PathVariable Long payslipId) {
         return ApiResponse.success(payrollRunService.getPayslipById(payslipId));
     }
@@ -97,6 +97,14 @@ public class PayrollController {
     @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isSameAgent(#agentId)")
     public ApiResponse<List<AgentPayrollSummaryResponse>> getSummariesByAgent(@PathVariable Long agentId) {
         return ApiResponse.success(payrollRunService.getAgentSummariesForAgent(agentId));
+    }
+
+    // One agent's employees' payslips for a run. Staff see any agent's; an agent only their own.
+    @GetMapping("/runs/{runId}/agents/{agentId}/payslips")
+    @PreAuthorize(STAFF_READ_ROLES + " or @accessGuard.isSameAgent(#agentId)")
+    public ApiResponse<List<PayslipResponse>> getAgentRunPayslips(
+            @PathVariable Long runId, @PathVariable Long agentId) {
+        return ApiResponse.success(payrollRunService.getPayslipsForAgentRun(runId, agentId));
     }
 
     // Agent Portal convenience endpoint — same /me pattern as AgentController.

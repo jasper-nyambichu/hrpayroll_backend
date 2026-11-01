@@ -17,6 +17,8 @@ public interface PayslipRepository extends JpaRepository<Payslip, Long> {
 
     List<Payslip> findByPayrollRunId(Long payrollRunId);
 
+    List<Payslip> findByPayrollRunIdAndEmployeeIdIn(Long payrollRunId, Collection<Long> employeeIds);
+
     List<Payslip> findByEmployeeId(Long employeeId);
 
     Optional<Payslip> findByPayrollRunIdAndEmployeeId(Long payrollRunId, Long employeeId);

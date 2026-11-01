@@ -73,6 +73,19 @@ public class AccessGuard {
                 .orElse(false);
     }
 
+    // An agent may open the payslip of one of their OWN employees, never anyone else's. Looks the
+    // owner up in the database and fails closed (false) for an unknown id.
+    public boolean isPayslipOfMyAgent(Long payslipId) {
+        User user = currentUser();
+        if (user.getAgentId() == null) {
+            return false;
+        }
+        return payslipRepository.findById(payslipId)
+                .flatMap(payslip -> employeeRepository.findById(payslip.getEmployeeId()))
+                .map(employee -> user.getAgentId().equals(employee.getAgentId()))
+                .orElse(false);
+    }
+
     // The leave request's employee must work in the caller's branch — otherwise a Branch Manager
     // could decide another branch's leave just by guessing an id. Fails closed for an unknown id.
     public boolean isLeaveRequestInMyBranch(Long leaveRequestId) {

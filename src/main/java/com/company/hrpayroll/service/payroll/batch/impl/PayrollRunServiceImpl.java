@@ -177,6 +177,20 @@ public class PayrollRunServiceImpl implements PayrollRunService {
     }
 
     @Override
+    public List<PayslipResponse> getPayslipsForAgentRun(Long payrollRunId, Long agentId) {
+        PayrollRun run = findRunOrThrow(payrollRunId);
+        List<Long> employeeIds = employeeRepository.findByAgentId(agentId).stream()
+                .map(Employee::getId)
+                .toList();
+        if (employeeIds.isEmpty()) {
+            return List.of();
+        }
+        return payslipRepository.findByPayrollRunIdAndEmployeeIdIn(payrollRunId, employeeIds).stream()
+                .map(payslip -> toPayslipResponse(payslip, run))
+                .toList();
+    }
+
+    @Override
     public PayslipResponse getPayslipById(Long payslipId) {
         Payslip payslip = payslipRepository.findById(payslipId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payslip not found with id: " + payslipId));
