@@ -69,7 +69,7 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
         // (EmployeeService.createEmployee), because data can change while pending.
         Branch branch = branchRepository.findById(request.branchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + request.branchId()));
-        if ("INACTIVE".equals(branch.getStatus())) {
+        if (!"ACTIVE".equals(branch.getStatus())) {
             throw new InvalidOperationException("Branch '" + branch.getName() + "' is inactive");
         }
 

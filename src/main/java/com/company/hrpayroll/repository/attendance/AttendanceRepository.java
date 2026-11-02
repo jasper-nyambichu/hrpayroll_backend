@@ -33,6 +33,10 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
             Long employeeId, LocalDate attendanceDate);
     Optional<Attendance> findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(Long employeeId);
 
+    // ---- deleting an employee: the days they attended after a date ----
+    @Query("select distinct a.attendanceDate from Attendance a where a.employeeId = :employeeId and a.attendanceDate > :after")
+    List<LocalDate> findAttendedDatesAfter(@Param("employeeId") Long employeeId, @Param("after") LocalDate after);
+
     // ---- admin / super-admin dashboards ----
     List<Attendance> findByAttendanceDate(LocalDate date);
 

@@ -75,7 +75,7 @@ public class EmployeeExportServiceImpl implements EmployeeExportService {
         } else if (branchId != null) {
             employees = employeeRepository.findByBranchId(branchId);
         } else {
-            employees = employeeRepository.findAll();
+            employees = employeeRepository.findAllExisting();
         }
 
         return employees.stream()

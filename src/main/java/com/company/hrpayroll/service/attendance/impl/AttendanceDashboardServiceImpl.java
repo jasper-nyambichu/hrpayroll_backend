@@ -10,12 +10,14 @@ import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.employee.Employee;
+import com.company.hrpayroll.entity.offday.OffDay;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricSyncFailureRepository;
 import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.repository.offday.OffDayRepository;
 import com.company.hrpayroll.service.attendance.AttendanceDashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -54,6 +56,7 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
     private final BranchRepository branchRepository;
     private final BiometricDeviceRepository deviceRepository;
     private final BiometricSyncFailureRepository failureRepository;
+    private final OffDayRepository offDayRepository;
     private final BusinessClock businessClock;
 
     // ------------------------------------------------------------------ summary
@@ -66,7 +69,7 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
         LocalDateTime now = businessClock.now();
 
         List<Branch> branches = new ArrayList<>();
-        if (scope == null) branches.addAll(branchRepository.findAll());
+        if (scope == null) branches.addAll(branchRepository.findByStatusNotOrderByCodeAsc("DELETED"));
         else branchRepository.findById(scope).ifPresent(branches::add);
         branches.removeIf(b -> !"ACTIVE".equals(b.getStatus()));
         branches.sort(Comparator.comparing(Branch::getName, String.CASE_INSENSITIVE_ORDER));
@@ -80,21 +83,28 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
         Map<Long, List<Attendance>> recordsByEmployee = attendanceRepository.findByAttendanceDate(day).stream()
                 .collect(Collectors.groupingBy(Attendance::getEmployeeId));
 
+        Set<Long> onOffDay = offDayRepository.findByStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(day, day).stream()
+                .map(OffDay::getEmployeeId)
+                .collect(Collectors.toSet());
+
         Map<Long, List<BiometricDevice>> devicesByBranch = deviceRepository.findAll().stream()
                 .filter(d -> "ACTIVE".equals(d.getStatus()))
                 .collect(Collectors.groupingBy(BiometricDevice::getBranchId));
 
         List<BranchSummary> summaries = new ArrayList<>();
-        int totalExpected = 0, totalReported = 0, totalIn = 0, totalOut = 0, devicesTotal = 0, devicesOnline = 0;
+        int totalExpected = 0, totalReported = 0, totalIn = 0, totalOut = 0, totalOff = 0, devicesTotal = 0, devicesOnline = 0;
 
         for (Branch branch : branches) {
             List<Employee> branchEmployees = employeesByBranch.getOrDefault(branch.getId(), List.of());
-            int in = 0, out = 0;
+            int in = 0, out = 0, off = 0;
             LocalDateTime lastActivity = null;
 
             for (Employee employee : branchEmployees) {
                 List<Attendance> records = recordsByEmployee.getOrDefault(employee.getId(), List.of());
-                if (records.isEmpty()) continue;
+                if (records.isEmpty()) {
+                    if (onOffDay.contains(employee.getId())) off++;
+                    continue;
+                }
 
                 if (records.stream().anyMatch(a -> a.getClockOut() == null)) in++;
                 else out++;
@@ -105,7 +115,8 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
                 }
             }
 
-            int expected = branchEmployees.size();
+            // Someone on an off day is not expected, unless they scanned anyway.
+            int expected = branchEmployees.size() - off;
             int reported = in + out;
 
             List<BiometricDevice> devices = devicesByBranch.getOrDefault(branch.getId(), List.of());
@@ -116,19 +127,20 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
 
             summaries.add(new BranchSummary(
                     branch.getId(), branch.getName(), branch.getCode(),
-                    expected, reported, in, out, expected - reported, percent(reported, expected),
+                    expected, reported, in, out, expected - reported, off, percent(reported, expected),
                     lastActivity, deviceStatus, deviceLast));
 
             totalExpected += expected;
             totalReported += reported;
             totalIn += in;
             totalOut += out;
+            totalOff += off;
             devicesTotal += devices.size();
             devicesOnline += onlineDevices;
         }
 
         return new DashboardSummary(day, now, totalExpected, totalReported, totalIn, totalOut,
-                totalExpected - totalReported, percent(totalReported, totalExpected),
+                totalExpected - totalReported, totalOff, percent(totalReported, totalExpected),
                 devicesTotal, devicesOnline, summaries);
     }
 

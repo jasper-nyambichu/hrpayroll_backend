@@ -3,9 +3,9 @@ package com.company.hrpayroll.dto.request.branch;
 
 import jakarta.validation.constraints.NotBlank;
 
+// The code is not here: the system gives every branch its next index code.
 public record BranchRequest(
         @NotBlank(message = "Branch name is required") String name,
-        @NotBlank(message = "Branch code is required") String code,
         String address,
         String phone,
         String email,

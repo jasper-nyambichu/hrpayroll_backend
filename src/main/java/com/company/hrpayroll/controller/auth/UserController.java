@@ -6,11 +6,13 @@ import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
+import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.service.auth.UserService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -60,6 +62,14 @@ public class UserController {
             @Valid @RequestBody UserBranchRequest request
     ) {
         return ApiResponse.success("Branch saved", userService.assignBackOfficeBranch(userId, request.branchId()));
+    }
+
+    @DeleteMapping("/{userId}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_DELETED", entityType = "User")
+    public ApiResponse<Void> deleteUser(@PathVariable Long userId, @AuthenticationPrincipal User currentUser) {
+        userService.deleteUser(userId, currentUser.getId());
+        return ApiResponse.success("User deleted", null);
     }
 
     @PutMapping("/{userId}/deactivate")

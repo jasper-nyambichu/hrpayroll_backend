@@ -15,4 +15,6 @@ public interface BiometricDeviceMappingRepository extends JpaRepository<Biometri
     boolean existsByDeviceIdAndTerminalUserId(Long deviceId, String terminalUserId);
 
     List<BiometricDeviceMapping> findByDeviceId(Long deviceId);
+
+    void deleteByEmployeeId(Long employeeId);
 }

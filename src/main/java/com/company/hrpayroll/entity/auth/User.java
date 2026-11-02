@@ -53,6 +53,11 @@ public class User extends BaseEntity implements UserDetails {
     @Column(nullable = false)
     private boolean mustChangePassword = false;
 
+    // A deleted login is hidden rather than removed, so history keeps showing who did what.
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean deleted = false;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

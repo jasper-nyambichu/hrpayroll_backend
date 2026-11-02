@@ -10,6 +10,7 @@ import com.company.hrpayroll.exception.DuplicateResourceException;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.branch.BranchMapper;
+import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
@@ -24,7 +25,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BranchServiceImpl implements BranchService {
 
+    private static final String DELETED = "DELETED";
+
     private final BranchRepository branchRepository;
+    private final BiometricDeviceRepository biometricDeviceRepository;
     private final UserRepository userRepository;
     private final EmployeeRepository employeeRepository;
     private final BranchMapper branchMapper;
@@ -34,12 +38,9 @@ public class BranchServiceImpl implements BranchService {
     public BranchResponse createBranch(BranchRequest request) {
         BranchRequest normalized = normalize(request);
 
-        if (branchRepository.existsByCode(normalized.code())) {
-            throw new DuplicateResourceException("Branch code '" + normalized.code() + "' is already in use");
-        }
         validateManager(normalized.managerId(), null);
 
-        Branch saved = branchRepository.save(branchMapper.toBranch(normalized));
+        Branch saved = branchRepository.save(branchMapper.toBranch(normalized, nextCode()));
         linkManager(saved, null);
         return toResponseWithManagerName(saved);
     }
@@ -50,10 +51,6 @@ public class BranchServiceImpl implements BranchService {
         Branch branch = findBranchOrThrow(id);
         BranchRequest normalized = normalize(request);
 
-        // Only re-check uniqueness if the code is actually changing.
-        if (!branch.getCode().equals(normalized.code()) && branchRepository.existsByCode(normalized.code())) {
-            throw new DuplicateResourceException("Branch code '" + normalized.code() + "' is already in use");
-        }
         validateManager(normalized.managerId(), id);
 
         Long previousManagerId = branch.getManagerId();
@@ -70,7 +67,7 @@ public class BranchServiceImpl implements BranchService {
 
     @Override
     public List<BranchResponse> getAllBranches() {
-        return branchRepository.findAll().stream()
+        return branchRepository.findByStatusNotOrderByCodeAsc(DELETED).stream()
                 .map(this::toResponseWithManagerName)
                 .toList();
     }
@@ -98,6 +95,43 @@ public class BranchServiceImpl implements BranchService {
         branchRepository.save(branch);
     }
 
+    // Refused while anyone still works here. The branch then vanishes from every list and its code is
+    // freed, but the row stays so past damages, days worked and terminated staff keep the old name.
+    @Override
+    @Transactional
+    public void deleteBranch(Long id) {
+        Branch branch = findBranchOrThrow(id);
+
+        long employees = employeeRepository.findByBranchId(id).stream()
+                .filter(employee -> !"TERMINATED".equals(employee.getEmploymentStatus()))
+                .count();
+        if (employees > 0) {
+            throw new InvalidOperationException(
+                    "This branch still has " + employees + " employee(s). Move or delete them first.");
+        }
+
+        long terminals = biometricDeviceRepository.findByBranchId(id).stream()
+                .filter(device -> "ACTIVE".equals(device.getStatus()))
+                .count();
+        if (terminals > 0) {
+            throw new InvalidOperationException(
+                    "This branch still has " + terminals + " active terminal(s). Deactivate them on the Devices page first.");
+        }
+
+        userRepository.findByBranchId(id).forEach(user -> {
+            user.setBranchId(null);
+            userRepository.save(user);
+        });
+
+        branch.setStatus(DELETED);
+        branch.setCode("DEL-" + id);
+        branch.setManagerId(null);
+        branchRepository.save(branch);
+
+        branchRepository.clearCodes();
+        branchRepository.assignCodesInOrder();
+    }
+
     @Override
     public void activateBranch(Long id) {
         Branch branch = findBranchOrThrow(id);
@@ -105,11 +139,22 @@ public class BranchServiceImpl implements BranchService {
         branchRepository.save(branch);
     }
 
-    // Codes are stored upper-case and trimmed so "nkr" and "NKR" are the same branch.
+    // The next index code. Deleting closes the gaps, so this is normally the count + 1.
+    private String nextCode() {
+        long position = branchRepository.countByStatusNot(DELETED) + 1;
+        String candidate = String.format("%03d", position);
+
+        while (branchRepository.existsByCode(candidate)) {
+            position++;
+            candidate = String.format("%03d", position);
+        }
+
+        return candidate;
+    }
+
     private BranchRequest normalize(BranchRequest request) {
         return new BranchRequest(
                 request.name().trim(),
-                request.code().trim().toUpperCase(),
                 request.address(),
                 request.phone(),
                 request.email(),
@@ -164,6 +209,7 @@ public class BranchServiceImpl implements BranchService {
 
     private Branch findBranchOrThrow(Long id) {
         return branchRepository.findById(id)
+                .filter(branch -> !DELETED.equals(branch.getStatus()))
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + id));
     }
 

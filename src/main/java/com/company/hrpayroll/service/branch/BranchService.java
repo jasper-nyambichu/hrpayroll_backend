@@ -13,5 +13,6 @@ public interface BranchService {
     List<BranchResponse> getAllBranches();
     List<BranchResponse> getBranchesByIds(List<Long> ids);
     void deactivateBranch(Long id);
+    void deleteBranch(Long id);
     void activateBranch(Long id);
 }

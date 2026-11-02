@@ -14,6 +14,7 @@ import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.employee.EmployeeExportService;
 import com.company.hrpayroll.service.employee.EmployeeService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -148,6 +149,17 @@ public class EmployeeController {
     @PreAuthorize("hasRole('EMPLOYEE')")
     public ApiResponse<EmployeeResponse> getMyProfile() {
         return ApiResponse.success(employeeService.getEmployeeById(accessGuard.currentEmployeeId()));
+    }
+
+    public record EmployeeBranchRequest(@NotNull(message = "Branch is required") Long branchId) {}
+
+    @PutMapping("/{id}/branch")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Auditable(action = "EMPLOYEE_BRANCH_CHANGED", entityType = "Employee")
+    public ApiResponse<EmployeeResponse> assignBranch(
+            @PathVariable Long id, @Valid @RequestBody EmployeeBranchRequest request
+    ) {
+        return ApiResponse.success("Branch changed", employeeService.assignBranch(id, request.branchId()));
     }
 
     @DeleteMapping("/{id}")

@@ -11,6 +11,9 @@ import java.util.List;
 @Repository
 public interface DaysWorkedRecordRepository extends JpaRepository<DaysWorkedRecord, Long> {
 
+    // Locked periods that end after a date: what has not been paid yet.
+    List<DaysWorkedRecord> findByEmployeeIdAndPeriodEndAfter(Long employeeId, LocalDate after);
+
     // The locked records for exactly this period (what the Back Office screen shows).
     List<DaysWorkedRecord> findByBranchIdAndPeriodStartAndPeriodEnd(Long branchId, LocalDate periodStart, LocalDate periodEnd);
 

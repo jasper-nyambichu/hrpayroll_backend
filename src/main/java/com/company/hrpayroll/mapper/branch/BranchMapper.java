@@ -9,10 +9,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class BranchMapper {
 
-    public Branch toBranch(BranchRequest dto) {
+    public Branch toBranch(BranchRequest dto, String code) {
         return Branch.builder()
                 .name(dto.name())
-                .code(dto.code())
+                .code(code)
                 .address(dto.address())
                 .phone(dto.phone())
                 .email(dto.email())
@@ -22,7 +22,6 @@ public class BranchMapper {
 
     public void updateBranchFromRequest(Branch branch, BranchRequest dto) {
         branch.setName(dto.name());
-        branch.setCode(dto.code());
         branch.setAddress(dto.address());
         branch.setPhone(dto.phone());
         branch.setEmail(dto.email());

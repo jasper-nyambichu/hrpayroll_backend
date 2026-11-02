@@ -63,6 +63,14 @@ public class BranchController {
         return ApiResponse.success(branchService.getAllBranches());
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "BRANCH_DELETED", entityType = "Branch")
+    public ApiResponse<Void> deleteBranch(@PathVariable Long id) {
+        branchService.deleteBranch(id);
+        return ApiResponse.success("Branch deleted", null);
+    }
+
     @PutMapping("/{id}/deactivate")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Auditable(action = "BRANCH_DEACTIVATED", entityType = "Branch")

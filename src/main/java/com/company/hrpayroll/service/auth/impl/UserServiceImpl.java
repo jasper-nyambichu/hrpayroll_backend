@@ -17,10 +17,12 @@ import com.company.hrpayroll.service.auth.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -56,6 +58,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public List<UserSummaryResponse> findAllUsers() {
         return userRepository.findAll().stream()
+                .filter(user -> !user.isDeleted())
                 .map(userMapper::toUserSummaryResponse)
                 .toList();
     }
@@ -88,6 +91,44 @@ public class UserServiceImpl implements UserService {
 
         user.setBranchId(branchId);
         return userMapper.toUserSummaryResponse(userRepository.save(user));
+    }
+
+    // The renamed username frees the old one and ends any session at once, because every request
+    // looks the account up by username.
+    @Override
+    @Transactional
+    public void deleteUser(Long userId, Long actingUserId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        if (userId.equals(actingUserId)) {
+            throw new InvalidOperationException("You cannot delete your own account");
+        }
+
+        boolean admin = user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
+        long activeAdmins = Stream.concat(
+                        userRepository.findByRole(Role.ADMIN).stream(),
+                        userRepository.findByRole(Role.SUPER_ADMIN).stream())
+                .filter(User::isActive)
+                .count();
+        if (admin && user.isActive() && activeAdmins <= 1) {
+            throw new InvalidOperationException("This is the last active Admin account, so it cannot be deleted");
+        }
+
+        branchRepository.findByManagerId(userId).forEach(branch -> {
+            branch.setManagerId(null);
+            branchRepository.save(branch);
+        });
+
+        String renamed = "deleted-" + userId + "-" + user.getUsername();
+        user.setUsername(renamed.length() > 100 ? renamed.substring(0, 100) : renamed);
+        user.setDeleted(true);
+        user.setActive(false);
+        user.setEmployeeId(null);
+        user.setAgentId(null);
+        user.setBranchId(null);
+        userRepository.save(user);
     }
 
     @Override

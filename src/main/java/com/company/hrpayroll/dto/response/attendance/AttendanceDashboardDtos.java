@@ -20,6 +20,7 @@ public final class AttendanceDashboardDtos {
             int currentlyIn,
             int clockedOut,
             int notYetIn,
+            int offToday,
             int attendanceRatePercent,
             int devicesTotal,
             int devicesOnline,
@@ -35,6 +36,7 @@ public final class AttendanceDashboardDtos {
             int currentlyIn,
             int clockedOut,
             int notYetIn,
+            int offToday,
             int attendanceRatePercent,
             LocalDateTime lastActivityAt,
             String deviceStatus,            // ONLINE | OFFLINE | NO_DEVICE

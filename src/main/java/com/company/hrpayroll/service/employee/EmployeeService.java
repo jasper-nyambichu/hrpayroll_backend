@@ -27,4 +27,5 @@ public interface EmployeeService {
 
     void terminateEmployee(Long id);
     void deleteEmployee(Long id);
+    EmployeeResponse assignBranch(Long id, Long branchId);
 }
