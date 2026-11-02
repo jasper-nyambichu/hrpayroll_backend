@@ -13,4 +13,5 @@ public interface OffDayService {
 
     List<OffDayResponse> getAll(LocalDate from, LocalDate to);
     List<OffDayResponse> getForAgent(Long agentId, LocalDate from, LocalDate to);
+    List<OffDayResponse> getForBranch(Long branchId, LocalDate from, LocalDate to);
 }

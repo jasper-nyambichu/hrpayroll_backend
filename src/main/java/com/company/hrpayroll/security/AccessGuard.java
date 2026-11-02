@@ -122,6 +122,11 @@ public class AccessGuard {
         return currentUser().getRole() == Role.AGENT;
     }
 
+    public boolean canRunAgentPayments() {
+        User user = currentUser();
+        return user.getRole() == Role.BRANCH_MANAGER && user.isCanRunPayments();
+    }
+
     public boolean isBranchManager() {
         return currentUser().getRole() == Role.BRANCH_MANAGER;
     }

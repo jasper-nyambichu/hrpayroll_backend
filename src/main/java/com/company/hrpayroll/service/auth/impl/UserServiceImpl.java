@@ -3,17 +3,22 @@ package com.company.hrpayroll.service.auth.impl;
 
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
+import com.company.hrpayroll.dto.request.auth.CredentialsRequest;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
+import com.company.hrpayroll.entity.agent.Agent;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
+import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.exception.DuplicateResourceException;
 import com.company.hrpayroll.exception.InvalidCredentialsException;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.auth.UserMapper;
+import com.company.hrpayroll.repository.agent.AgentRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.service.auth.UserService;
+import com.company.hrpayroll.service.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,10 +37,15 @@ public class UserServiceImpl implements UserService {
     private static final Set<Role> CREATABLE_ROLES = EnumSet.of(
             Role.ADMIN, Role.BRANCH_MANAGER, Role.AGENT, Role.BACK_OFFICE);
 
+    // The logins whose username and password the Admin sets and shares.
+    private static final Set<Role> ADMIN_SET_ROLES = EnumSet.of(Role.BRANCH_MANAGER, Role.BACK_OFFICE, Role.AGENT);
+
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
+    private final AgentRepository agentRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
 
     @Override
     public UserSummaryResponse createUser(CreateUserRequest request) {
@@ -64,6 +74,13 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public UserSummaryResponse findById(Long userId) {
+        return userRepository.findById(userId)
+                .map(userMapper::toUserSummaryResponse)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+    }
+
+    @Override
     public void changePassword(Long userId, ChangePasswordRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
@@ -88,9 +105,132 @@ public class UserServiceImpl implements UserService {
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found with id: " + branchId);
         }
+        rejectIfBranchHasLogin(branchId, Role.BACK_OFFICE, userId);
 
         user.setBranchId(branchId);
         return userMapper.toUserSummaryResponse(userRepository.save(user));
+    }
+
+    // One Branch Manager and one Back Office login per branch. They need no password change at first
+    // sign-in, because the Admin chose the password to share it.
+    @Override
+    @Transactional
+    public UserSummaryResponse createBranchLogin(Long branchId, Role role, CredentialsRequest request) {
+        if (role != Role.BRANCH_MANAGER && role != Role.BACK_OFFICE) {
+            throw new InvalidOperationException("A branch login is either a Branch Manager or a Back Office");
+        }
+
+        Branch branch = branchRepository.findById(branchId)
+                .filter(found -> !"DELETED".equals(found.getStatus()))
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + branchId));
+        rejectIfBranchHasLogin(branchId, role, null);
+
+        String title = role == Role.BRANCH_MANAGER ? "Branch Manager" : "Back Office";
+        User saved = userRepository.save(newLogin(request, role, branch.getName() + " " + title)
+                .branchId(branchId)
+                .build());
+
+        if (role == Role.BRANCH_MANAGER) {
+            branch.setManagerId(saved.getId());
+            branchRepository.save(branch);
+        }
+        return userMapper.toUserSummaryResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public UserSummaryResponse createAgentLogin(Long agentId, CredentialsRequest request) {
+        Agent agent = agentRepository.findById(agentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found with id: " + agentId));
+        if (!"ACTIVE".equals(agent.getStatus())) {
+            throw new InvalidOperationException("This agent is inactive, so they cannot be given a login");
+        }
+        if (userRepository.findByAgentId(agentId).isPresent()) {
+            throw new DuplicateResourceException("This agent already has a login. Change it instead.");
+        }
+
+        User saved = userRepository.save(newLogin(request, Role.AGENT, agent.getName())
+                .agentId(agentId)
+                .build());
+        return userMapper.toUserSummaryResponse(saved);
+    }
+
+    // A new username ends any session at once, because every request looks the account up by username.
+    @Override
+    public UserSummaryResponse changeCredentials(Long userId, CredentialsRequest request) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        if (!ADMIN_SET_ROLES.contains(user.getRole())) {
+            throw new InvalidOperationException("Only Branch Manager, Back Office and Agent logins can be changed here");
+        }
+        if (!request.username().equals(user.getUsername())) {
+            rejectIfUsernameTaken(request.username());
+            user.setUsername(request.username());
+        }
+        if (request.password() != null) {
+            user.setPassword(passwordEncoder.encode(request.password()));
+            user.setMustChangePassword(false);
+        }
+        return userMapper.toUserSummaryResponse(userRepository.save(user));
+    }
+
+    // The Branch Manager is told either way, so they know whether they can stand in for the Admin.
+    @Override
+    @Transactional
+    public UserSummaryResponse setRunPayments(Long userId, boolean allowed) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        if (user.getRole() != Role.BRANCH_MANAGER) {
+            throw new InvalidOperationException("Only a Branch Manager can be allowed to run agent payments");
+        }
+        if (user.isCanRunPayments() == allowed) {
+            return userMapper.toUserSummaryResponse(user);
+        }
+
+        user.setCanRunPayments(allowed);
+        User saved = userRepository.save(user);
+        notificationService.notifyInApp(
+                saved.getId(),
+                allowed ? "AGENT_PAYMENT_RUN_GRANTED" : "AGENT_PAYMENT_RUN_REVOKED",
+                allowed
+                        ? "The Administrator has allowed you to run the agent payment calculation."
+                        : "The Administrator has taken back your permission to run the agent payment calculation.",
+                saved.getId());
+        return userMapper.toUserSummaryResponse(saved);
+    }
+
+    private User.UserBuilder newLogin(CredentialsRequest request, Role role, String displayName) {
+        if (request.password() == null) {
+            throw new InvalidOperationException("Password is required");
+        }
+        rejectIfUsernameTaken(request.username());
+
+        return User.builder()
+                .username(request.username())
+                .password(passwordEncoder.encode(request.password()))
+                .role(role)
+                .displayName(displayName)
+                .active(true)
+                .mustChangePassword(false);
+    }
+
+    private void rejectIfUsernameTaken(String username) {
+        if (userRepository.existsByUsername(username)) {
+            throw new DuplicateResourceException("Username '" + username + "' is already taken");
+        }
+    }
+
+    private void rejectIfBranchHasLogin(Long branchId, Role role, Long exceptUserId) {
+        boolean taken = userRepository.findByBranchId(branchId).stream()
+                .anyMatch(user -> user.getRole() == role && !user.getId().equals(exceptUserId));
+        if (taken) {
+            String title = role == Role.BRANCH_MANAGER ? "Branch Manager" : "Back Office";
+            throw new DuplicateResourceException("This branch already has a " + title + " login. Change it instead.");
+        }
     }
 
     // The renamed username frees the old one and ends any session at once, because every request

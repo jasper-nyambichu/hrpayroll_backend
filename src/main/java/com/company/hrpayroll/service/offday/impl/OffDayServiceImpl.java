@@ -98,6 +98,14 @@ public class OffDayServiceImpl implements OffDayService {
         return toResponses(offDayRepository.findByAgentIdAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(agentId, to, from));
     }
 
+    // An off day belongs to the branch its employee works at.
+    @Override
+    public List<OffDayResponse> getForBranch(Long branchId, LocalDate from, LocalDate to) {
+        return getAll(from, to).stream()
+                .filter(offDay -> branchId != null && branchId.equals(offDay.branchId()))
+                .toList();
+    }
+
     private void validateRange(LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {
             throw new InvalidOperationException("The end date cannot be before the start date");

@@ -58,6 +58,12 @@ public class User extends BaseEntity implements UserDetails {
     @Column(nullable = false)
     private boolean deleted = false;
 
+    // A Branch Manager the Admin has allowed to run the agent payment calculation. Read on every
+    // request, so taking it back works at once.
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean canRunPayments = false;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

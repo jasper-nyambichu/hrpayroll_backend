@@ -32,7 +32,9 @@ public class UserMapper {
                 user.getRole().name(),
                 user.getDisplayName(),
                 user.getBranchId(),
-                user.isActive()
+                user.getAgentId(),
+                user.isActive(),
+                user.isCanRunPayments()
         );
     }
 }

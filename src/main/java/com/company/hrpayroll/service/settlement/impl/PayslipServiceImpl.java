@@ -101,7 +101,8 @@ public class PayslipServiceImpl implements PayslipService {
             writer.row("Damages", "(" + format(payslip.damage()) + ")");
 
             writer.divider();
-            writer.boldRow("Amount Paid to Employee", format(payslip.amountDue()));
+            writer.boldRow("Amount Paid to the Agent for This Employee", format(payslip.amountDue()));
+            writer.subtitle("Includes PAYE, NSSF and NITA, which the agent deducts and pays to the government.");
 
             writer.sectionHeading("Payments Recorded by the Agent");
             if (payslip.payments().isEmpty()) {

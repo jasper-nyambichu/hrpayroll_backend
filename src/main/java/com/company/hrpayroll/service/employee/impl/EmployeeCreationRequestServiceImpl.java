@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -193,13 +194,19 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
     private EmployeeRequest scopeToSubmitter(EmployeeRequest r, User submitter) {
         Long branchId = r.branchId();
         Long agentId = r.agentId();
+        BigDecimal basicSalary = r.basicSalary();
 
         if (submitter.getRole() == Role.BRANCH_MANAGER) {
             if (submitter.getBranchId() == null) {
                 throw new InvalidOperationException(
                         "Your account is not assigned to a branch. Ask an Admin to assign you one.");
             }
+            // The agent is who the payment formula pays through, and the formula decides the pay.
+            if (agentId == null) {
+                throw new InvalidOperationException("Choose the agent this employee belongs to");
+            }
             branchId = submitter.getBranchId();
+            basicSalary = null;
         } else if (submitter.getRole() == Role.AGENT) {
             if (submitter.getAgentId() == null) {
                 throw new InvalidOperationException("Your account is not linked to an agent record.");
@@ -207,7 +214,8 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
             agentId = submitter.getAgentId();
         }
 
-        if (Objects.equals(branchId, r.branchId()) && Objects.equals(agentId, r.agentId())) {
+        if (Objects.equals(branchId, r.branchId()) && Objects.equals(agentId, r.agentId())
+                && Objects.equals(basicSalary, r.basicSalary())) {
             return r;
         }
 
@@ -215,7 +223,7 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
                 r.fullName(), r.nationalId(), r.dateOfBirth(), r.gender(), r.maritalStatus(),
                 r.phone(), r.email(), r.address(), r.kraPin(), r.shifNumber(),
                 r.nssfNumber(), r.nitaNumber(), branchId, r.departmentId(), agentId,
-                r.position(), r.employmentType(), r.basicSalary(), r.dateHired(),
+                r.position(), r.employmentType(), basicSalary, r.dateHired(),
                 r.bankName(), r.bankAccountNumber(), r.emergencyContactName(),
                 r.emergencyContactPhone());
     }

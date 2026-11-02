@@ -49,6 +49,15 @@ public class OffDayController {
         return ApiResponse.success(offDayService.getAll(from, to));
     }
 
+    @GetMapping("/my-branch")
+    @PreAuthorize("hasRole('BRANCH_MANAGER')")
+    public ApiResponse<List<OffDayResponse>> getMyBranch(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return ApiResponse.success(offDayService.getForBranch(accessGuard.currentBranchId(), from, to));
+    }
+
     @GetMapping("/mine")
     @PreAuthorize("hasRole('AGENT')")
     public ApiResponse<List<OffDayResponse>> getMine(

@@ -37,4 +37,14 @@ public record EmployeeResponse(
         String bankAccountNumber,
         String emergencyContactName,
         String emergencyContactPhone
-) {}
+) {
+
+    // What a Branch Manager receives: pay comes from the payment formula and is not theirs to see.
+    public EmployeeResponse withoutSalary() {
+        return new EmployeeResponse(
+                id, fullName, employeeNumber, passportPhotoUrl, nationalId, dateOfBirth, gender, maritalStatus,
+                phone, email, address, kraPin, shifNumber, nssfNumber, nitaNumber, branchId, branchName,
+                departmentId, departmentName, agentId, agentName, position, employmentType, null, dateHired,
+                employmentStatus, bankName, bankAccountNumber, emergencyContactName, emergencyContactPhone);
+    }
+}

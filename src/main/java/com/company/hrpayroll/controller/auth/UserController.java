@@ -4,8 +4,10 @@ package com.company.hrpayroll.controller.auth;
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
+import com.company.hrpayroll.dto.request.auth.CredentialsRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
+import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.service.auth.UserService;
 import jakarta.validation.Valid;
@@ -23,6 +25,12 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+
+    // The signed-in account as it stands now, so a screen can tell if the Admin has just changed it.
+    @GetMapping("/me")
+    public ApiResponse<UserSummaryResponse> me(@AuthenticationPrincipal User currentUser) {
+        return ApiResponse.success(userService.findById(currentUser.getId()));
+    }
 
     // Only Super Admin can create staff/agent/employee login accounts —
     // matches "the only role that can create Admin accounts" from the proposal.
@@ -50,8 +58,53 @@ public class UserController {
         return ApiResponse.success("Password changed", null);
     }
 
-    // Which branch a Back Office officer works at. Only a label: Back Office keeps its company-wide
-    // access. Branch Managers are not moved here because their branch decides what they can see.
+    // The Admin sets a login's username and password and shares them. The audit trail never records the body.
+    @PostMapping("/branches/{branchId}/login")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_CREDENTIALS_CREATED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> createBranchLogin(
+            @PathVariable Long branchId,
+            @RequestParam Role role,
+            @Valid @RequestBody CredentialsRequest request
+    ) {
+        return ApiResponse.success("Login created", userService.createBranchLogin(branchId, role, request));
+    }
+
+    @PostMapping("/agents/{agentId}/login")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_CREDENTIALS_CREATED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> createAgentLogin(
+            @PathVariable Long agentId,
+            @Valid @RequestBody CredentialsRequest request
+    ) {
+        return ApiResponse.success("Login created", userService.createAgentLogin(agentId, request));
+    }
+
+    @PutMapping("/{userId}/credentials")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_CREDENTIALS_CHANGED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> changeCredentials(
+            @PathVariable Long userId,
+            @Valid @RequestBody CredentialsRequest request
+    ) {
+        return ApiResponse.success("Login changed", userService.changeCredentials(userId, request));
+    }
+
+    public record RunPaymentsRequest(@NotNull(message = "Choose yes or no") Boolean allowed) {}
+
+    // Lets a Branch Manager run the agent payment calculation while the Admin is away, or takes it back.
+    @PutMapping("/{userId}/run-payments")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_RUN_PAYMENTS_CHANGED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> setRunPayments(
+            @PathVariable Long userId,
+            @Valid @RequestBody RunPaymentsRequest request
+    ) {
+        return ApiResponse.success("Saved", userService.setRunPayments(userId, request.allowed()));
+    }
+
+    // Which branch a Back Office officer works at, which also limits what their dashboard shows.
+    // Branch Managers are not moved here because their branch decides what they can see.
     public record UserBranchRequest(@NotNull(message = "Branch is required") Long branchId) {}
 
     @PutMapping("/{userId}/branch")

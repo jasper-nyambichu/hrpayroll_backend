@@ -28,12 +28,14 @@ public class AgentSettlementController {
 
     private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
 
+    // A Branch Manager the Admin has allowed runs the same calculation for every agent, standing in for
+    // the Admin, but is not given the amounts: those stay with the Admin and each agent.
     @PostMapping("/calculate")
-    @PreAuthorize(ADMIN_ROLES)
+    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.canRunAgentPayments()")
     @Auditable(action = "AGENT_PAYMENTS_CALCULATED", entityType = "AgentSettlement")
     public ApiResponse<List<AgentSettlementResponse>> calculate(@Valid @RequestBody AgentSettlementRunRequest request) {
-        return ApiResponse.success("Agent payments calculated",
-                settlementService.calculate(request, accessGuard.currentUserId()));
+        List<AgentSettlementResponse> results = settlementService.calculate(request, accessGuard.currentUserId());
+        return ApiResponse.success("Agent payments calculated", accessGuard.isBranchManager() ? List.of() : results);
     }
 
     // Every agent's payments, newest period first.

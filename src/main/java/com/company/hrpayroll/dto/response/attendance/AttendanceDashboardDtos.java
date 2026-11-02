@@ -68,7 +68,19 @@ public final class AttendanceDashboardDtos {
             LocalDateTime clockOut,
             Double hoursWorked,
             String status,                  // IN_PROGRESS | COMPLETED
-            String source
+            String source,
+            List<CheckoutItem> checkouts
+    ) {}
+
+    public record CheckoutItem(
+            Long id,
+            String type,                    // LUNCH | EMERGENCY
+            LocalDateTime checkedOutAt,
+            LocalDateTime expectedBackAt,
+            LocalDateTime checkedInAt,
+            String returnStatus,            // OUT | ON_TIME | LATE | RETURNED (back, with no time limit)
+            Integer minutesLate,
+            String reason
     ) {}
 
     public record DeviceItem(

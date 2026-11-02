@@ -4,6 +4,7 @@ import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.dto.response.PageResponse;
 import com.company.hrpayroll.dto.response.attendance.AttendanceDashboardDtos.*;
 import com.company.hrpayroll.entity.attendance.Attendance;
+import com.company.hrpayroll.entity.attendance.AttendanceCheckout;
 import com.company.hrpayroll.entity.attendance.BiometricDevice;
 import com.company.hrpayroll.entity.attendance.BiometricSyncFailure;
 import com.company.hrpayroll.entity.auth.Role;
@@ -12,6 +13,7 @@ import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.offday.OffDay;
 import com.company.hrpayroll.exception.InvalidOperationException;
+import com.company.hrpayroll.repository.attendance.AttendanceCheckoutRepository;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricSyncFailureRepository;
@@ -57,6 +59,7 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
     private final BiometricDeviceRepository deviceRepository;
     private final BiometricSyncFailureRepository failureRepository;
     private final OffDayRepository offDayRepository;
+    private final AttendanceCheckoutRepository checkoutRepository;
     private final BusinessClock businessClock;
 
     // ------------------------------------------------------------------ summary
@@ -206,7 +209,13 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
         Map<Long, Branch> branches = branchesById(
                 result.getContent().stream().map(Attendance::getBranchId).collect(Collectors.toSet()));
 
-        return PageResponse.from(result.map(a -> recordItem(a, employees, branches)));
+        Map<Long, List<CheckoutItem>> checkouts = checkoutRepository
+                .findByAttendanceIdInOrderByCheckedOutAtAsc(result.getContent().stream().map(Attendance::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(AttendanceCheckout::getAttendanceId,
+                        Collectors.mapping(AttendanceDashboardServiceImpl::checkoutItem, Collectors.toList())));
+
+        return PageResponse.from(result.map(a -> recordItem(a, employees, branches, checkouts.getOrDefault(a.getId(), List.of()))));
     }
 
     // ------------------------------------------------------------------ devices / failures
@@ -234,7 +243,13 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
     @Override
     @Transactional(readOnly = true)
     public List<SyncFailureItem> failures() {
-        List<BiometricSyncFailure> rows = failureRepository.findTop100ByOrderByCreatedAtDesc();
+        Long scope = scopeBranch(null);
+        Set<String> serials = scope == null ? Set.of() : deviceRepository.findByBranchId(scope).stream()
+                .map(BiometricDevice::getDeviceSerial)
+                .collect(Collectors.toSet());
+        List<BiometricSyncFailure> rows = failureRepository.findTop100ByOrderByCreatedAtDesc().stream()
+                .filter(f -> scope == null || (f.getDeviceSerial() != null && serials.contains(f.getDeviceSerial())))
+                .toList();
         Map<Long, Employee> employees = employeesById(rows.stream()
                 .map(BiometricSyncFailure::getEmployeeId).filter(Objects::nonNull).collect(Collectors.toSet()));
 
@@ -286,6 +301,10 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
             }
             return user.getBranchId();
         }
+        // A Back Office login with a branch works on that branch alone.
+        if (auth != null && auth.getPrincipal() instanceof User user && user.getRole() == Role.BACK_OFFICE && user.getBranchId() != null) {
+            return user.getBranchId();
+        }
         return requested;
     }
 
@@ -329,7 +348,26 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
                 type, at, a.getSource().name());
     }
 
-    private RecordItem recordItem(Attendance a, Map<Long, Employee> employees, Map<Long, Branch> branches) {
+    private static CheckoutItem checkoutItem(AttendanceCheckout c) {
+        String returnStatus;
+        Integer minutesLate = null;
+        if (c.getCheckedInAt() == null) {
+            returnStatus = "OUT";
+        } else if (c.getExpectedBackAt() == null) {
+            returnStatus = "RETURNED";
+        } else if (c.getCheckedInAt().isAfter(c.getExpectedBackAt())) {
+            returnStatus = "LATE";
+            // Rounded up, so being back a few seconds late never reads as 0 minutes.
+            minutesLate = (int) Math.ceil(Duration.between(c.getExpectedBackAt(), c.getCheckedInAt()).toSeconds() / 60.0);
+        } else {
+            returnStatus = "ON_TIME";
+        }
+
+        return new CheckoutItem(c.getId(), c.getCheckType(), c.getCheckedOutAt(), c.getExpectedBackAt(), c.getCheckedInAt(),
+                returnStatus, minutesLate, c.getReason());
+    }
+
+    private RecordItem recordItem(Attendance a, Map<Long, Employee> employees, Map<Long, Branch> branches, List<CheckoutItem> checkouts) {
         Employee e = employees.get(a.getEmployeeId());
         Branch b = branches.get(a.getBranchId());
 
@@ -347,6 +385,7 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
                 a.getBranchId(), b != null ? b.getName() : null,
                 a.getAttendanceDate(), a.getClockIn(), a.getClockOut(), hours,
                 a.getClockOut() == null ? "IN_PROGRESS" : "COMPLETED",
-                a.getSource().name());
+                a.getSource().name(),
+                checkouts);
     }
 }

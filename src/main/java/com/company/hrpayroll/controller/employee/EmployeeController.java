@@ -60,7 +60,11 @@ public class EmployeeController {
     public ApiResponse<EmployeeResponse> assignDepartment(
             @PathVariable Long id, @Valid @RequestBody DepartmentAssignmentRequest request
     ) {
-        return ApiResponse.success("Department assigned", employeeService.assignDepartment(id, request.departmentId()));
+        return ApiResponse.success("Department assigned", forViewer(employeeService.assignDepartment(id, request.departmentId())));
+    }
+
+    private EmployeeResponse forViewer(EmployeeResponse employee) {
+        return accessGuard.isBranchManager() ? employee.withoutSalary() : employee;
     }
 
     // Super Admin/Admin/HR/Payroll see any employee; a Branch Manager only if the employee is
@@ -73,7 +77,7 @@ public class EmployeeController {
             "or (hasRole('AGENT') and @accessGuard.isEmployeeOfMyAgent(#id)) " +
             "or @accessGuard.isSameEmployee(#id)")
     public ApiResponse<EmployeeResponse> getEmployeeById(@PathVariable Long id) {
-        return ApiResponse.success(employeeService.getEmployeeById(id));
+        return ApiResponse.success(forViewer(employeeService.getEmployeeById(id)));
     }
 
     // The real branch boundary — a Branch Manager can only list employees for their own branch.
@@ -122,6 +126,18 @@ public class EmployeeController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ApiResponse<List<EmployeeDirectoryResponse>> getBranchDirectory(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getBranchDirectory(branchId));
+    }
+
+    // The same list for a Branch Manager: their own branch, without salary.
+    @GetMapping("/my-branch-directory")
+    @PreAuthorize("hasRole('BRANCH_MANAGER')")
+    public ApiResponse<List<EmployeeDirectoryResponse>> getMyBranchEmployees() {
+        if (accessGuard.currentBranchId() == null) {
+            throw new InvalidOperationException("Your account is not assigned to a branch. Ask an Admin to assign you one.");
+        }
+        return ApiResponse.success(employeeService.getBranchDirectory(accessGuard.currentBranchId()).stream()
+                .map(EmployeeDirectoryResponse::withoutSalary)
+                .toList());
     }
 
     // The same list for an agent: only their own employees.
