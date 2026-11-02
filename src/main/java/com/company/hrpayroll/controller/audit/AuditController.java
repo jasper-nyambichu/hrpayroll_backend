@@ -39,12 +39,13 @@ public class AuditController {
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String entityType,
             @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size
     ) {
-        return ApiResponse.success(auditService.search(action, entityType, userId, from, to, pageable(page, size)));
+        return ApiResponse.success(auditService.search(action, entityType, userId, category, from, to, pageable(page, size)));
     }
 
     // The values that exist in the log — used to populate the filter dropdowns.

@@ -35,7 +35,6 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
     private static final String CANCELLED = "CANCELLED";
 
     private static final String TYPE_SUBMITTED = "PAYMENT_REQUEST_SUBMITTED";
-    private static final String TYPE_TO_RELEASE = "PAYMENT_REQUEST_TO_RELEASE";
     private static final String TYPE_APPROVED = "PAYMENT_REQUEST_APPROVED";
     private static final String TYPE_REJECTED = "PAYMENT_REQUEST_REJECTED";
     private static final String TYPE_RELEASED = "PAYMENT_REQUEST_RELEASED";
@@ -72,6 +71,26 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
 
     @Override
     @Transactional
+    public Long createApproved(Long agentId, BigDecimal amount, String purpose, Long adminUserId) {
+        PaymentRequest saved = paymentRequestRepository.save(PaymentRequest.builder()
+                .agentId(agentId)
+                .amount(amount)
+                .purpose(purpose)
+                .status(APPROVED)
+                .requestedByUserId(adminUserId)
+                .decidedByUserId(adminUserId)
+                .decidedAt(businessClock.now())
+                .build());
+
+        recipients.agentLogin(agentId).ifPresent(agentUser ->
+                notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
+                        purpose + ": " + kes(amount) + ". The Administrator will release the money.", saved.getId()));
+
+        return saved.getId();
+    }
+
+    @Override
+    @Transactional
     public PaymentRequestResponse cancel(Long paymentRequestId, Long agentId) {
         PaymentRequest request = findOrThrow(paymentRequestId);
 
@@ -103,17 +122,10 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
 
         notificationService.resolveByReference(TYPE_SUBMITTED, saved.getId());
 
-        String agentName = agentName(saved.getAgentId());
         recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
                         "Your request for " + kes(saved.getAmount())
-                                + " was approved. The Accounts Office will release the money.", saved.getId()));
-
-        // The Accounts Office now has something to release.
-        recipients.accountsOffice().forEach(officer ->
-                notificationService.notifyInApp(officer.getId(), TYPE_TO_RELEASE,
-                        "Release " + kes(saved.getAmount()) + " to " + agentName + " — approved by the Administrator.",
-                        saved.getId()));
+                                + " was approved. The Administrator will release the money.", saved.getId()));
 
         return toResponse(saved);
     }
@@ -151,7 +163,6 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
         request.setReleasedAt(businessClock.now());
         PaymentRequest saved = paymentRequestRepository.save(request);
 
-        notificationService.resolveByReference(TYPE_TO_RELEASE, saved.getId());
         recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_RELEASED,
                         kes(saved.getAmount()) + " has been released (reference " + saved.getReleaseReference()

@@ -39,9 +39,9 @@ public class AgentAdvanceController {
         return ApiResponse.success("Advance recorded", agentAdvanceService.recordAdvance(request));
     }
 
-    // Manual recovery outside of a payroll run (e.g. the agent pays cash
-    // directly) — automatic recovery during payroll runs happens inside
-    // PayrollRunServiceImpl and never touches this endpoint.
+    // Manual recovery outside of an agent payment (e.g. the agent pays cash
+    // directly) — automatic recovery happens inside
+    // AgentSettlementServiceImpl and never touches this endpoint.
     @PutMapping("/{advanceId}/recover")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'PAYROLL_OFFICER')")
     @Auditable(action = "AGENT_ADVANCE_RECOVERED", entityType = "AgentAdvance")

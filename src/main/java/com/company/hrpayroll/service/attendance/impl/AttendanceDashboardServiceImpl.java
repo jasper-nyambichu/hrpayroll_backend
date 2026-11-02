@@ -235,6 +235,34 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public AgentToday agentToday(Long agentId) {
+        if (agentId == null) {
+            return new AgentToday(0, 0, 0);
+        }
+
+        List<Long> employeeIds = employeeRepository.findByAgentId(agentId).stream()
+                .filter(employee -> "ACTIVE".equals(employee.getEmploymentStatus()))
+                .map(Employee::getId)
+                .toList();
+        if (employeeIds.isEmpty()) {
+            return new AgentToday(0, 0, 0);
+        }
+
+        LocalDate today = businessClock.today();
+        List<Attendance> records = attendanceRepository.findByEmployeeIdInAndAttendanceDateBetween(employeeIds, today, today);
+
+        int reported = (int) records.stream().filter(a -> a.getClockIn() != null).map(Attendance::getEmployeeId).distinct().count();
+        int currentlyIn = (int) records.stream()
+                .filter(a -> a.getClockIn() != null && a.getClockOut() == null)
+                .map(Attendance::getEmployeeId)
+                .distinct()
+                .count();
+
+        return new AgentToday(employeeIds.size(), reported, currentlyIn);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     // A Branch Manager only ever sees their own branch, whatever branchId they pass.

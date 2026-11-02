@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 // Money an agent asks for so they can pay their employees. PENDING until the Admin decides;
-// APPROVED means the Accounts Office should release it; RELEASED means the money has gone out and the
+// APPROVED means the Admin should release it; RELEASED means the money has gone out and the
 // agent may now record each payment (with its M-Pesa code) against it.
 @Entity
 @Table(name = "payment_requests")

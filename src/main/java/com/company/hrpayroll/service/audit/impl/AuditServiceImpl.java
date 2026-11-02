@@ -65,7 +65,7 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     public PageResponse<AuditLogResponse> search(
-            String action, String entityType, Long userId, LocalDate from, LocalDate to, Pageable pageable) {
+            String action, String entityType, Long userId, String category, LocalDate from, LocalDate to, Pageable pageable) {
 
         Specification<AuditLog> filters = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -77,6 +77,14 @@ public class AuditServiceImpl implements AuditService {
             }
             if (userId != null) {
                 predicates.add(cb.equal(root.get("performedByUserId"), userId));
+            }
+            // The three groups an auditor tracks most. An unknown category matches everything.
+            if ("DAMAGES".equals(category)) {
+                predicates.add(cb.equal(root.get("entityType"), "Damage"));
+            } else if ("LOGINS".equals(category)) {
+                predicates.add(cb.like(root.get("action"), "LOGIN%"));
+            } else if ("APPROVALS".equals(category)) {
+                predicates.add(cb.or(cb.like(root.get("action"), "%APPROVED%"), cb.like(root.get("action"), "%REJECTED%")));
             }
             if (from != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.<LocalDateTime>get("createdAt"), from.atStartOfDay()));

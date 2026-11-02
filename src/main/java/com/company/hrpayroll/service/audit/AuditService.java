@@ -15,7 +15,7 @@ public interface AuditService {
 
     // The full history log, newest first. Every filter is optional.
     PageResponse<AuditLogResponse> search(
-            String action, String entityType, Long userId, LocalDate from, LocalDate to, Pageable pageable);
+            String action, String entityType, Long userId, String category, LocalDate from, LocalDate to, Pageable pageable);
 
     AuditLogResponse getById(Long id);
 

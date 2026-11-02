@@ -12,4 +12,5 @@ public interface UserService {
     List<UserSummaryResponse> findAllUsers();
     void changePassword(Long userId, ChangePasswordRequest request);
     void deactivateUser(Long userId);
+    UserSummaryResponse assignBackOfficeBranch(Long userId, Long branchId);
 }

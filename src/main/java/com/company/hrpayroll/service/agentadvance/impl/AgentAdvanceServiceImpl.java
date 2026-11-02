@@ -91,7 +91,7 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
         AgentAdvance advance = findAdvanceOrThrow(advanceId);
         requirePending(advance, "approved");
 
-        // From here it is a real advance: dated today and recovered from the agent's next payroll run.
+        // From here it is a real advance: dated today and recovered from the agent's next payment.
         advance.setStatus("OUTSTANDING");
         advance.setAdvanceDate(businessClock.today());
         advance.setDecidedByUserId(adminUserId);
@@ -101,7 +101,7 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
         notificationService.resolveByReference(TYPE_REQUESTED, saved.getId());
         recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
-                        "Your advance of " + kes(saved.getAmount()) + " was approved. It will be recovered from your next payroll.",
+                        "Your advance of " + kes(saved.getAmount()) + " was approved. It will be deducted from your next payment.",
                         saved.getId()));
 
         return toResponseWithAgentName(saved);

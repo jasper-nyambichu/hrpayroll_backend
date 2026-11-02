@@ -16,6 +16,7 @@ public class AgentMapper {
                 .phone(dto.phone())
                 .email(dto.email())
                 .address(dto.address())
+                .directorName(dto.directorName())
                 .bankName(dto.bankName())
                 .bankAccountNumber(dto.bankAccountNumber())
                 .kraPin(dto.kraPin())
@@ -34,6 +35,7 @@ public class AgentMapper {
         agent.setPhone(dto.phone());
         agent.setEmail(dto.email());
         agent.setAddress(dto.address());
+        agent.setDirectorName(dto.directorName());
         agent.setBankName(dto.bankName());
         agent.setBankAccountNumber(dto.bankAccountNumber());
         agent.setKraPin(dto.kraPin());
@@ -45,7 +47,7 @@ public class AgentMapper {
         agent.setVatRegistered(dto.vatRegistered());
     }
 
-    public AgentResponse toAgentResponse(Agent agent, Integer employeeCount) {
+    public AgentResponse toAgentResponse(Agent agent, Integer employeeCount, boolean directorIdOnFile) {
         return new AgentResponse(
                 agent.getId(),
                 agent.getName(),
@@ -53,6 +55,8 @@ public class AgentMapper {
                 agent.getPhone(),
                 agent.getEmail(),
                 agent.getAddress(),
+                agent.getDirectorName(),
+                directorIdOnFile,
                 agent.getBankName(),
                 agent.getBankAccountNumber(),
                 agent.getKraPin(),

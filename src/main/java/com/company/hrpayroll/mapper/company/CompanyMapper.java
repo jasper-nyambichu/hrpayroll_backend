@@ -12,7 +12,6 @@ public class CompanyMapper {
     public Company toCompany(CompanyRequest dto) {
         return Company.builder()
                 .name(dto.name())
-                .logoUrl(dto.logoUrl())
                 .address(dto.address())
                 .phone(dto.phone())
                 .email(dto.email())
@@ -28,7 +27,6 @@ public class CompanyMapper {
 
     public void updateCompanyFromRequest(Company company, CompanyRequest dto) {
         company.setName(dto.name());
-        company.setLogoUrl(dto.logoUrl());
         company.setAddress(dto.address());
         company.setPhone(dto.phone());
         company.setEmail(dto.email());

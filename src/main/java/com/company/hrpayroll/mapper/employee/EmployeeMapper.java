@@ -2,6 +2,7 @@
 package com.company.hrpayroll.mapper.employee;
 
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
+import com.company.hrpayroll.dto.response.employee.EmployeeDirectoryResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeSummaryResponse;
 import com.company.hrpayroll.entity.employee.Employee;
@@ -100,6 +101,21 @@ public class EmployeeMapper {
                 employee.getBankAccountNumber(),
                 employee.getEmergencyContactName(),
                 employee.getEmergencyContactPhone()
+        );
+    }
+
+    public EmployeeDirectoryResponse toEmployeeDirectoryResponse(
+            Employee employee, String departmentName, String agentName) {
+        return new EmployeeDirectoryResponse(
+                employee.getId(),
+                employee.getEmployeeNumber(),
+                employee.getFullName(),
+                employee.getPhone(),
+                departmentName,
+                agentName,
+                employee.getBasicSalary(),
+                employee.getPosition(),
+                employee.getEmploymentStatus()
         );
     }
 

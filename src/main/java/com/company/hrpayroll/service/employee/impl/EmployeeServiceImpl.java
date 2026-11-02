@@ -2,8 +2,10 @@
 package com.company.hrpayroll.service.employee.impl;
 
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
+import com.company.hrpayroll.dto.response.employee.EmployeeDirectoryResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeSummaryResponse;
+import com.company.hrpayroll.entity.agent.Agent;
 import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.department.Department;
 import com.company.hrpayroll.entity.employee.Employee;
@@ -20,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -83,6 +87,20 @@ public class EmployeeServiceImpl implements EmployeeService {
         return employeeRepository.findByDepartmentId(departmentId).stream()
                 .map(this::toSummaryResponse)
                 .toList();
+    }
+
+    @Override
+    public List<EmployeeDirectoryResponse> getBranchDirectory(Long branchId) {
+        return toDirectory(employeeRepository.findByBranchId(branchId));
+    }
+
+    // A login with no agent record sees nothing: a null here must never match the company's direct staff.
+    @Override
+    public List<EmployeeDirectoryResponse> getBranchDirectoryForAgent(Long branchId, Long agentId) {
+        if (agentId == null) {
+            return List.of();
+        }
+        return toDirectory(employeeRepository.findByBranchIdAndAgentId(branchId, agentId));
     }
 
     // Departments are company-wide, so any branch's employee can be placed in any department.
@@ -192,6 +210,19 @@ public class EmployeeServiceImpl implements EmployeeService {
                 : null;
 
         return employeeMapper.toEmployeeResponse(employee, branchName, departmentName, agentName);
+    }
+
+    // Names are read once, not per row.
+    private List<EmployeeDirectoryResponse> toDirectory(List<Employee> employees) {
+        Map<Long, String> departments = departmentRepository.findAll().stream()
+                .collect(Collectors.toMap(Department::getId, Department::getName));
+        Map<Long, String> agents = agentRepository.findAll().stream()
+                .collect(Collectors.toMap(Agent::getId, Agent::getName));
+
+        return employees.stream()
+                .map(employee -> employeeMapper.toEmployeeDirectoryResponse(
+                        employee, departments.get(employee.getDepartmentId()), agents.get(employee.getAgentId())))
+                .toList();
     }
 
     private EmployeeSummaryResponse toSummaryResponse(Employee employee) {

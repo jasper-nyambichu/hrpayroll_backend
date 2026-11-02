@@ -26,9 +26,9 @@ public record EmployeeRequest(
         Long departmentId,
         Long agentId,
         String position,
-        @NotNull(message = "Employment type is required") EmploymentType employmentType,
-        // Retired: pay now comes from days worked x the daily rate, so no salary is asked for.
-        // Still accepted (optional) so older clients and stored requests keep working.
+        // No longer asked for when adding an employee; still accepted so older clients keep working.
+        EmploymentType employmentType,
+        // Optional and for reference only: pay comes from days worked x the daily rate.
         @DecimalMin(value = "0.0", message = "Basic salary cannot be negative") BigDecimal basicSalary,
         LocalDate dateHired,
         String bankName,

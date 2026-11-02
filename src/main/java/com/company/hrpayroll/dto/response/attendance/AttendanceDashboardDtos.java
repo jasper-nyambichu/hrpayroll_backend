@@ -9,6 +9,9 @@ public final class AttendanceDashboardDtos {
 
     private AttendanceDashboardDtos() {}
 
+    // An agent's own active employees today: how many there are, reported at all, and still clocked in.
+    public record AgentToday(int employees, int reported, int currentlyIn) {}
+
     public record DashboardSummary(
             LocalDate date,
             LocalDateTime generatedAt,

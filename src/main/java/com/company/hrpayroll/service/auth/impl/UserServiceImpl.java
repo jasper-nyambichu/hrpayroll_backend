@@ -12,6 +12,7 @@ import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.auth.UserMapper;
 import com.company.hrpayroll.repository.auth.UserRepository;
+import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.service.auth.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,13 +26,12 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
-    // The six business roles new accounts can be created for. HR Manager, Auditor, Employee and
-    // Super Admin stay valid for accounts that already exist, but are no longer offered.
+    // The roles new accounts can be created for. Other roles remain only on deactivated accounts.
     private static final Set<Role> CREATABLE_ROLES = EnumSet.of(
-            Role.ADMIN, Role.BRANCH_MANAGER, Role.AGENT,
-            Role.BACK_OFFICE, Role.PAYROLL_OFFICER, Role.FINANCE_OFFICER);
+            Role.ADMIN, Role.BRANCH_MANAGER, Role.AGENT, Role.BACK_OFFICE);
 
     private final UserRepository userRepository;
+    private final BranchRepository branchRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
@@ -39,8 +39,7 @@ public class UserServiceImpl implements UserService {
     public UserSummaryResponse createUser(CreateUserRequest request) {
         if (!CREATABLE_ROLES.contains(request.role())) {
             throw new InvalidOperationException(
-                    "New accounts can only be created for Admin, Branch Manager, Agent, Back Office, "
-                            + "Payroll or Accounts Office roles");
+                    "New accounts can only be created for Admin, Branch Manager, Agent or Back Office roles");
         }
 
         if (userRepository.existsByUsername(request.username())) {
@@ -73,6 +72,22 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         user.setMustChangePassword(false);
         userRepository.save(user);
+    }
+
+    @Override
+    public UserSummaryResponse assignBackOfficeBranch(Long userId, Long branchId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        if (user.getRole() != Role.BACK_OFFICE) {
+            throw new InvalidOperationException("Only a Back Office account can be assigned to a branch here");
+        }
+        if (!branchRepository.existsById(branchId)) {
+            throw new ResourceNotFoundException("Branch not found with id: " + branchId);
+        }
+
+        user.setBranchId(branchId);
+        return userMapper.toUserSummaryResponse(userRepository.save(user));
     }
 
     @Override

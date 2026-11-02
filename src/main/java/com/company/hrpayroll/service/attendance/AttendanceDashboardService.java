@@ -13,4 +13,5 @@ public interface AttendanceDashboardService {
     PageResponse<RecordItem> records(Long branchId, LocalDate start, LocalDate end, boolean openOnly, int page, int size);
     List<DeviceItem> devices(Long branchId);
     List<SyncFailureItem> failures();
+    AgentToday agentToday(Long agentId);
 }

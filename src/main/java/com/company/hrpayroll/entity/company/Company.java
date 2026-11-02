@@ -21,7 +21,16 @@ public class Company extends BaseEntity {
     @Column(nullable = false, length = 150)
     private String name;
 
+    // Set to where the logo can be fetched from once one has been uploaded.
     private String logoUrl;
+
+    // The logo itself: PNG or JPEG. Kept here so it survives a redeploy of the backend container.
+    @Column(columnDefinition = "bytea")
+    private byte[] logoData;
+
+    @Column(length = 20)
+    private String logoContentType;
+
     private String address;
     private String phone;
     private String email;

@@ -3,6 +3,7 @@ package com.company.hrpayroll.controller.attendance;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.PageResponse;
 import com.company.hrpayroll.dto.response.attendance.AttendanceDashboardDtos.*;
+import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.attendance.AttendanceDashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -29,6 +30,14 @@ public class AttendanceDashboardController {
     private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','BACK_OFFICE')";
 
     private final AttendanceDashboardService dashboardService;
+    private final AccessGuard accessGuard;
+
+    // The figures on the agent's dashboard, for their own employees only.
+    @GetMapping("/my-agent-today")
+    @PreAuthorize("hasRole('AGENT')")
+    public ApiResponse<AgentToday> myAgentToday() {
+        return ApiResponse.success(dashboardService.agentToday(accessGuard.currentAgentId()));
+    }
 
     @GetMapping("/summary")
     @PreAuthorize(VIEW_ROLES)

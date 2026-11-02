@@ -13,6 +13,8 @@ public record AgentResponse(
         String phone,
         String email,
         String address,
+        String directorName,
+        boolean directorIdOnFile,
         String bankName,
         String bankAccountNumber,
         String kraPin,

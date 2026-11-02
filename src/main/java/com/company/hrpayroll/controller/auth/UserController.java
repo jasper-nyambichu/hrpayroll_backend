@@ -8,6 +8,7 @@ import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
 import com.company.hrpayroll.service.auth.UserService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +46,20 @@ public class UserController {
     ) {
         userService.changePassword(userId, request);
         return ApiResponse.success("Password changed", null);
+    }
+
+    // Which branch a Back Office officer works at. Only a label: Back Office keeps its company-wide
+    // access. Branch Managers are not moved here because their branch decides what they can see.
+    public record UserBranchRequest(@NotNull(message = "Branch is required") Long branchId) {}
+
+    @PutMapping("/{userId}/branch")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_BRANCH_ASSIGNED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> assignBranch(
+            @PathVariable Long userId,
+            @Valid @RequestBody UserBranchRequest request
+    ) {
+        return ApiResponse.success("Branch saved", userService.assignBackOfficeBranch(userId, request.branchId()));
     }
 
     @PutMapping("/{userId}/deactivate")

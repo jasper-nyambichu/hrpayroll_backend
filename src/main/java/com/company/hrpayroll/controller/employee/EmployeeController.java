@@ -5,12 +5,19 @@ import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.employee.DepartmentAssignmentRequest;
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
+import com.company.hrpayroll.dto.response.common.GeneratedDocument;
+import com.company.hrpayroll.dto.response.employee.EmployeeDirectoryResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeSummaryResponse;
+import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.security.AccessGuard;
+import com.company.hrpayroll.service.employee.EmployeeExportService;
 import com.company.hrpayroll.service.employee.EmployeeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +29,7 @@ import java.util.List;
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final EmployeeExportService employeeExportService;
     private final AccessGuard accessGuard;
 
     // Admin adds employees directly. Branch Managers and Agents propose them through
@@ -73,6 +81,53 @@ public class EmployeeController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BACK_OFFICE') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getEmployeesByBranch(branchId));
+    }
+
+    // Downloads the employee list as a PDF (with the company logo) or CSV. Who is signed in decides
+    // what it holds, whatever the request asks for: an Admin any branch or all of them, a Branch
+    // Manager their own branch, an Agent only their own employees. Branch Managers do not get salary.
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BRANCH_MANAGER', 'AGENT')")
+    public ResponseEntity<byte[]> exportEmployees(
+            @RequestParam(defaultValue = "PDF") EmployeeExportService.Format format,
+            @RequestParam(required = false) Long branchId
+    ) {
+        GeneratedDocument document;
+        if (accessGuard.isAgent()) {
+            if (accessGuard.currentAgentId() == null) {
+                throw new InvalidOperationException("Your account is not linked to an agent record.");
+            }
+            document = employeeExportService.export(format, branchId, accessGuard.currentAgentId(), true);
+        } else if (accessGuard.isBranchManager()) {
+            if (accessGuard.currentBranchId() == null) {
+                throw new InvalidOperationException("Your account is not assigned to a branch. Ask an Admin to assign you one.");
+            }
+            document = employeeExportService.export(format, accessGuard.currentBranchId(), null, false);
+        } else {
+            document = employeeExportService.export(format, branchId, null, true);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentDispositionFormData("attachment", document.fileName());
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentType(MediaType.parseMediaType(document.contentType()))
+                .body(document.content());
+    }
+
+    // A branch's list, with basic salary. Admin only.
+    @GetMapping("/directory/by-branch/{branchId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ApiResponse<List<EmployeeDirectoryResponse>> getBranchDirectory(@PathVariable Long branchId) {
+        return ApiResponse.success(employeeService.getBranchDirectory(branchId));
+    }
+
+    // The same list for an agent: only their own employees.
+    @GetMapping("/my-directory/by-branch/{branchId}")
+    @PreAuthorize("hasRole('AGENT')")
+    public ApiResponse<List<EmployeeDirectoryResponse>> getMyBranchDirectory(@PathVariable Long branchId) {
+        return ApiResponse.success(employeeService.getBranchDirectoryForAgent(branchId, accessGuard.currentAgentId()));
     }
 
     // The Agent Portal boundary — an agent only ever sees their own workers.

@@ -11,8 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-// Who to tell when something needs a decision or has been decided: every active Admin, every active
-// Accounts Office login, or the login that belongs to one agent. Shared by the loan, advance and
+// Who to tell when something needs a decision or has been decided: every active Admin, or the login that belongs to one agent. Shared by the loan, advance and
 // payment modules so each does not keep its own copy of these lookups.
 @Component
 @RequiredArgsConstructor
@@ -24,12 +23,6 @@ public class NotificationRecipients {
         return Stream.concat(
                         userRepository.findByRole(Role.ADMIN).stream(),
                         userRepository.findByRole(Role.SUPER_ADMIN).stream())
-                .filter(User::isActive)
-                .toList();
-    }
-
-    public List<User> accountsOffice() {
-        return userRepository.findByRole(Role.FINANCE_OFFICER).stream()
                 .filter(User::isActive)
                 .toList();
     }

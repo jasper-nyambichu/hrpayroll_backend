@@ -1,7 +1,7 @@
 // controller/report/ReportController.java
 package com.company.hrpayroll.controller.report;
 
-import com.company.hrpayroll.dto.response.payroll.GeneratedDocument;
+import com.company.hrpayroll.dto.response.common.GeneratedDocument;
 import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.report.ReportService;
 import lombok.RequiredArgsConstructor;
@@ -41,12 +41,6 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end
     ) {
         return toPdfDownload(reportService.generateAttendanceReport(branchId, start, end));
-    }
-
-    @GetMapping("/payroll-register/{payrollRunId}")
-    @PreAuthorize(REPORT_ROLES)
-    public ResponseEntity<byte[]> getPayrollRegisterReport(@PathVariable Long payrollRunId) {
-        return toPdfDownload(reportService.generatePayrollRegisterReport(payrollRunId));
     }
 
     // branchIds as a comma-separated query param keeps this a simple GET

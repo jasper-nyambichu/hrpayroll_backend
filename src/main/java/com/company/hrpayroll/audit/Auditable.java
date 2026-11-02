@@ -6,8 +6,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-// Usage: @Auditable(action = "PAYROLL_RUN_EXECUTED", entityType = "PayrollRun")
-// placed directly on a service method — e.g. PayrollRunServiceImpl.runPayroll.
+// Usage: @Auditable(action = "AGENT_PAYMENTS_CALCULATED", entityType = "AgentSettlement")
+// placed directly on a service method — e.g. AgentSettlementController.calculate.
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Auditable {

@@ -21,6 +21,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     List<Employee> findByAgentId(Long agentId);
 
+    List<Employee> findByBranchIdAndAgentId(Long branchId, Long agentId);
+
     List<Employee> findByDepartmentId(Long departmentId);
 
     List<Employee> findByBranchIdIn(List<Long> branchIds);

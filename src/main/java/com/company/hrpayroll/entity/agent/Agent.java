@@ -29,6 +29,9 @@ public class Agent extends BaseEntity {
     private String email;
     private String address;
 
+    @Column(length = 150)
+    private String directorName;
+
     private String bankName;
     private String bankAccountNumber;
 

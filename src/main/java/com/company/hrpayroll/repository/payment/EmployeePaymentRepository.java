@@ -5,12 +5,15 @@ import com.company.hrpayroll.entity.payment.EmployeePayment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
 public interface EmployeePaymentRepository extends JpaRepository<EmployeePayment, Long> {
 
     List<EmployeePayment> findByPaymentRequestId(Long paymentRequestId);
+
+    List<EmployeePayment> findByPaymentRequestIdIn(Collection<Long> paymentRequestIds);
 
     List<EmployeePayment> findByAgentId(Long agentId);
 

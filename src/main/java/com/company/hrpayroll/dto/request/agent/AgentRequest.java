@@ -4,6 +4,7 @@ package com.company.hrpayroll.dto.request.agent;
 import com.company.hrpayroll.entity.agent.ChargeType;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -11,11 +12,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record AgentRequest(
-        @NotBlank(message = "Agent name is required") String name,
+        @NotBlank(message = "Company name is required") String name,
         String contactPerson,
-        String phone,
-        String email,
-        String address,
+        @NotBlank(message = "Phone number is required") String phone,
+        @NotBlank(message = "Email is required") @Email(message = "Email is not valid") String email,
+        @NotBlank(message = "Address is required") String address,
+        @NotBlank(message = "Director name is required") String directorName,
         String bankName,
         String bankAccountNumber,
         String kraPin,

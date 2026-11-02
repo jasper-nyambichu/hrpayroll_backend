@@ -5,12 +5,17 @@ import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.agent.AgentRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.agent.AgentResponse;
+import com.company.hrpayroll.dto.response.common.GeneratedDocument;
 import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.agent.AgentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -39,6 +44,24 @@ public class AgentController {
             @PathVariable Long id, @Valid @RequestBody AgentRequest request
     ) {
         return ApiResponse.success("Agent updated", agentService.updateAgent(id, request));
+    }
+
+    @PostMapping(value = "/{id}/director-id", consumes = "multipart/form-data")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Auditable(action = "AGENT_DIRECTOR_ID_UPLOADED", entityType = "Agent")
+    public ApiResponse<AgentResponse> uploadDirectorId(@PathVariable Long id, @RequestParam MultipartFile file) {
+        return ApiResponse.success("Director ID saved", agentService.uploadDirectorId(id, file));
+    }
+
+    // An identity document: the Admin only, never cached.
+    @GetMapping("/{id}/director-id")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<byte[]> getDirectorId(@PathVariable Long id) {
+        GeneratedDocument photo = agentService.getDirectorId(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(photo.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .body(photo.content());
     }
 
     // FINANCE_OFFICER and AUDITOR read agents as part of their financial review (read-only).

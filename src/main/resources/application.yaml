@@ -2,6 +2,12 @@ spring:
   application:
     name: hrpayroll
 
+  # Phone photos of a director's ID are often over Spring's default 1 MB. Each service sets its own lower limit.
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
   datasource:
     url: jdbc:postgresql://localhost:5433/hrpayroll
     username: hrpayroll_user
@@ -49,7 +55,7 @@ spring:
 
 server:
   address: 0.0.0.0
-  port: 8080
+  port: 8081
 
 app:
   jwt:

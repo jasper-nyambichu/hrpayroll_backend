@@ -70,10 +70,10 @@ public class Employee extends BaseEntity {
     private String position;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private EmploymentType employmentType;
 
-    // Retired: payroll now pays days worked x the daily rate. Kept (nullable) for older records.
+    // For reference only: pay comes from days worked x the daily rate.
     @Column(precision = 15, scale = 2)
     private BigDecimal basicSalary;
 

@@ -80,10 +80,10 @@ public class EmployeeCreationRequest extends BaseEntity {
     private String position;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private EmploymentType employmentType;
 
-    @Column(nullable = false, precision = 15, scale = 2)
+    @Column(precision = 15, scale = 2)
     private BigDecimal basicSalary;
 
     private LocalDate dateHired;

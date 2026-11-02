@@ -2,10 +2,12 @@
 package com.company.hrpayroll.security;
 
 import com.company.hrpayroll.dto.request.shift.ShiftAssignmentRequest;
+import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
-import com.company.hrpayroll.repository.payroll.PayslipRepository;
+import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
+import com.company.hrpayroll.repository.settlement.EmployeePayslipRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -17,7 +19,8 @@ import org.springframework.stereotype.Component;
 public class AccessGuard {
 
     private final EmployeeRepository employeeRepository;
-    private final PayslipRepository payslipRepository;
+    private final AgentSettlementRepository agentSettlementRepository;
+    private final EmployeePayslipRepository employeePayslipRepository;
     private final LeaveRequestRepository leaveRequestRepository;
 
     private User currentUser() {
@@ -61,28 +64,29 @@ public class AccessGuard {
                 .orElse(false);
     }
 
-    // Looks up the payslip's actual owner from the database. Fails closed (false)
-    // for an unknown payslipId, so an employee can never read someone else's payslip by id.
-    public boolean isOwnPayslip(Long payslipId) {
-        User user = currentUser();
-        if (user.getEmployeeId() == null) {
-            return false;
-        }
-        return payslipRepository.findById(payslipId)
-                .map(payslip -> user.getEmployeeId().equals(payslip.getEmployeeId()))
-                .orElse(false);
-    }
-
-    // An agent may open the payslip of one of their OWN employees, never anyone else's. Looks the
-    // owner up in the database and fails closed (false) for an unknown id.
-    public boolean isPayslipOfMyAgent(Long payslipId) {
+    // An agent may open only their OWN payment statement. Looks the owner up in the database and
+    // fails closed (false) for an unknown id.
+    public boolean isSettlementOfMyAgent(Long settlementId) {
         User user = currentUser();
         if (user.getAgentId() == null) {
             return false;
         }
-        return payslipRepository.findById(payslipId)
-                .flatMap(payslip -> employeeRepository.findById(payslip.getEmployeeId()))
-                .map(employee -> user.getAgentId().equals(employee.getAgentId()))
+        return agentSettlementRepository.findById(settlementId)
+                .map(settlement -> user.getAgentId().equals(settlement.getAgentId()))
+                .orElse(false);
+    }
+
+    // A Branch Manager may open the payslips of employees in their own branch. Fails closed for an unknown id.
+    public boolean isPayslipInMyBranch(Long payslipId) {
+        return employeePayslipRepository.findById(payslipId)
+                .map(payslip -> isEmployeeInMyBranch(payslip.getEmployeeId()))
+                .orElse(false);
+    }
+
+    // An agent may open the payslips of a payment they were given. Fails closed for an unknown id.
+    public boolean isPayslipOfMyAgent(Long payslipId) {
+        return employeePayslipRepository.findById(payslipId)
+                .map(payslip -> isSettlementOfMyAgent(payslip.getSettlementId()))
                 .orElse(false);
     }
 
@@ -112,6 +116,14 @@ public class AccessGuard {
             return isSameBranch(request.branchId());
         }
         return false;
+    }
+
+    public boolean isAgent() {
+        return currentUser().getRole() == Role.AGENT;
+    }
+
+    public boolean isBranchManager() {
+        return currentUser().getRole() == Role.BRANCH_MANAGER;
     }
 
     public Long currentBranchId() {

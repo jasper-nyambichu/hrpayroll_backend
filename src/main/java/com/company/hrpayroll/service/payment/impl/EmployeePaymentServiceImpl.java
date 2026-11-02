@@ -55,7 +55,7 @@ public class EmployeePaymentServiceImpl implements EmployeePaymentService {
         if (!"RELEASED".equals(paymentRequest.getStatus())) {
             throw new InvalidOperationException(
                     "The money for this request has not been released yet. Payments can only be recorded "
-                            + "once the Accounts Office releases it.");
+                            + "once the Administrator releases it.");
         }
 
         Employee employee = employeeRepository.findById(request.employeeId())

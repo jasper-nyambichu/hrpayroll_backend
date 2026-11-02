@@ -24,7 +24,7 @@ public class PaymentRequestController {
     private final PaymentRequestService paymentRequestService;
     private final AccessGuard accessGuard;
 
-    // Who may SEE every agent's payment requests. The Accounts Office needs them to release the money.
+    // Who may SEE every agent's payment requests.
     private static final String STAFF_READ_ROLES =
             "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'FINANCE_OFFICER', 'PAYROLL_OFFICER', 'AUDITOR')";
 
@@ -51,7 +51,7 @@ public class PaymentRequestController {
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Auditable(action = "PAYMENT_REQUEST_APPROVED", entityType = "PaymentRequest")
     public ApiResponse<PaymentRequestResponse> approve(@PathVariable Long paymentRequestId) {
-        return ApiResponse.success("Payment request approved — the Accounts Office will release it",
+        return ApiResponse.success("Payment request approved",
                 paymentRequestService.approve(paymentRequestId, accessGuard.currentUserId()));
     }
 
@@ -66,7 +66,7 @@ public class PaymentRequestController {
                 paymentRequestService.reject(paymentRequestId, request.reason(), accessGuard.currentUserId()));
     }
 
-    // The Accounts Office sends the money and records how.
+    // The Admin sends the money and records how.
     @PutMapping("/{paymentRequestId}/release")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'FINANCE_OFFICER')")
     @Auditable(action = "PAYMENT_REQUEST_RELEASED", entityType = "PaymentRequest")
