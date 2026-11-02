@@ -9,6 +9,8 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
+# docker-compose.prod.yml forwards to 8080. application.yaml says 8081 for local runs, so the image sets its own port.
+ENV SERVER_PORT=8080
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 
