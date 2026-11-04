@@ -311,6 +311,7 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
                 e.getReviewedAt(),
                 e.getRejectionReason(),
                 e.getCreatedEmployeeId(),
+                e.getBranchId(),
                 branchName,
                 departmentName,
                 agentName,

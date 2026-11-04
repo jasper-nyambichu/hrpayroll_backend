@@ -37,7 +37,8 @@ public class EmployeeDocumentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER') or hasRole('EMPLOYEE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'EMPLOYEE') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#employeeId))")
     public ApiResponse<List<EmployeeDocumentResponse>> getDocuments(@PathVariable Long employeeId) {
         return ApiResponse.success(employeeDocumentService.getDocumentsByEmployee(employeeId));
     }

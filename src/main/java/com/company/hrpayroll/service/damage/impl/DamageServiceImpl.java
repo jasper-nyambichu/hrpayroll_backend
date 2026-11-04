@@ -7,14 +7,13 @@ import com.company.hrpayroll.dto.request.damage.DamageRequest;
 import com.company.hrpayroll.dto.response.damage.DamageResponse;
 import com.company.hrpayroll.dto.response.damage.PendingConsentResponse;
 import com.company.hrpayroll.entity.attendance.BiometricDevice;
-import com.company.hrpayroll.entity.attendance.BiometricDeviceMapping;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.damage.Damage;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.mapper.damage.DamageMapper;
-import com.company.hrpayroll.repository.attendance.BiometricDeviceMappingRepository;
+import com.company.hrpayroll.service.attendance.impl.TerminalIdentity;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.damage.DamageRepository;
@@ -42,7 +41,7 @@ public class DamageServiceImpl implements DamageService {
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
     private final BiometricDeviceRepository biometricDeviceRepository;
-    private final BiometricDeviceMappingRepository biometricDeviceMappingRepository;
+    private final TerminalIdentity terminalIdentity;
     private final DamageMapper damageMapper;
     private final BusinessClock businessClock;
 
@@ -110,11 +109,10 @@ public class DamageServiceImpl implements DamageService {
 
         // The fingerprint must belong to the employee the damage was recorded against —
         // nobody else's scan can approve it.
-        BiometricDeviceMapping mapping = biometricDeviceMappingRepository
-                .findByDeviceIdAndTerminalUserId(device.getId(), request.terminalUserId())
+        Long scannedEmployeeId = terminalIdentity.employeeFor(device.getId(), request.terminalUserId())
                 .orElseThrow(() -> new InvalidOperationException("Unknown terminal user on this device"));
 
-        if (!mapping.getEmployeeId().equals(damage.getEmployeeId())) {
+        if (!scannedEmployeeId.equals(damage.getEmployeeId())) {
             throw new InvalidOperationException("This fingerprint does not belong to the employee concerned");
         }
 
@@ -133,13 +131,8 @@ public class DamageServiceImpl implements DamageService {
         BiometricDevice device = biometricDeviceRepository.findByDeviceSerial(deviceSerial)
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found: " + deviceSerial));
 
-        // terminal user id by employee, for the employees enrolled on this device
-        Map<Long, String> terminalUserByEmployee = biometricDeviceMappingRepository.findByDeviceId(device.getId())
-                .stream()
-                .collect(Collectors.toMap(
-                        BiometricDeviceMapping::getEmployeeId,
-                        BiometricDeviceMapping::getTerminalUserId,
-                        (first, second) -> first));
+        // terminal user id by employee, for the enrolled employees who now work at this device's branch
+        Map<Long, String> terminalUserByEmployee = terminalIdentity.idsAtBranchOf(device);
 
         if (terminalUserByEmployee.isEmpty()) {
             return List.of();

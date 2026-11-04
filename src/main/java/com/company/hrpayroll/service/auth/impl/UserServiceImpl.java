@@ -94,21 +94,78 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
     }
 
+    // Moves a Branch Manager or Back Office login, all or nothing. Every request reloads the account, so
+    // the old branch is closed to them from their very next request, without signing them out.
+    // A branch keeps one login of each role, so a taken branch is refused unless the Admin asked to swap.
     @Override
-    public UserSummaryResponse assignBackOfficeBranch(Long userId, Long branchId) {
+    @Transactional
+    public BranchMove assignBranch(Long userId, Long branchId, boolean swap) {
         User user = userRepository.findById(userId)
+                .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
-        if (user.getRole() != Role.BACK_OFFICE) {
-            throw new InvalidOperationException("Only a Back Office account can be assigned to a branch here");
+        Role role = user.getRole();
+        if (role != Role.BRANCH_MANAGER && role != Role.BACK_OFFICE) {
+            throw new InvalidOperationException("Only a Branch Manager or Back Office login can be moved to a branch");
         }
-        if (!branchRepository.existsById(branchId)) {
-            throw new ResourceNotFoundException("Branch not found with id: " + branchId);
+        if (!user.isActive()) {
+            throw new InvalidOperationException("This login is inactive, so it cannot be moved");
         }
-        rejectIfBranchHasLogin(branchId, Role.BACK_OFFICE, userId);
 
-        user.setBranchId(branchId);
-        return userMapper.toUserSummaryResponse(userRepository.save(user));
+        Branch target = branchRepository.findById(branchId)
+                .filter(found -> !"DELETED".equals(found.getStatus()))
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id: " + branchId));
+        if (!"ACTIVE".equals(target.getStatus())) {
+            throw new InvalidOperationException("Branch '" + target.getName() + "' is inactive");
+        }
+        if (branchId.equals(user.getBranchId())) {
+            throw new InvalidOperationException("This login already works at " + target.getName());
+        }
+
+        String title = role == Role.BRANCH_MANAGER ? "Branch Manager" : "Back Office";
+        List<User> atTarget = userRepository.findByBranchId(branchId).stream()
+                .filter(other -> other.getRole() == role && !other.getId().equals(userId))
+                .toList();
+        Branch current = user.getBranchId() == null ? null : branchRepository.findById(user.getBranchId()).orElse(null);
+
+        if (!atTarget.isEmpty()) {
+            boolean canSwap = swap && role == Role.BRANCH_MANAGER && current != null && atTarget.size() == 1;
+            if (!canSwap) {
+                throw new DuplicateResourceException(
+                        target.getName() + " already has a " + title + ". Move or delete that login first.");
+            }
+            User other = atTarget.get(0);
+            relocate(user, current, target, title);
+            relocate(other, target, current, title);
+            target.setManagerId(userId);
+            current.setManagerId(other.getId());
+            branchRepository.save(target);
+            branchRepository.save(current);
+            return new BranchMove(userMapper.toUserSummaryResponse(user), userMapper.toUserSummaryResponse(other));
+        }
+
+        if (role == Role.BRANCH_MANAGER) {
+            branchRepository.findByManagerId(userId).forEach(previous -> {
+                previous.setManagerId(null);
+                branchRepository.save(previous);
+            });
+            target.setManagerId(userId);
+            branchRepository.save(target);
+        }
+        relocate(user, current, target, title);
+        return new BranchMove(userMapper.toUserSummaryResponse(user), null);
+    }
+
+    private void relocate(User user, Branch from, Branch to, String title) {
+        // The automatic name carries the branch, so it moves too. A name the Admin chose is left alone.
+        if (from != null && (from.getName() + " " + title).equals(user.getDisplayName())) {
+            user.setDisplayName(to.getName() + " " + title);
+        }
+        user.setBranchId(to.getId());
+        userRepository.save(user);
+
+        notificationService.notifyInApp(user.getId(), "BRANCH_CHANGED",
+                "You have been moved to " + to.getName() + ". You now work with that branch only.", to.getId());
     }
 
     // One Branch Manager and one Back Office login per branch. They need no password change at first
@@ -173,34 +230,10 @@ public class UserServiceImpl implements UserService {
             user.setPassword(passwordEncoder.encode(request.password()));
             user.setMustChangePassword(false);
         }
+        if (request.email() != null) {
+            user.setEmail(checkedEmail(request.email(), userId));
+        }
         return userMapper.toUserSummaryResponse(userRepository.save(user));
-    }
-
-    // The Branch Manager is told either way, so they know whether they can stand in for the Admin.
-    @Override
-    @Transactional
-    public UserSummaryResponse setRunPayments(Long userId, boolean allowed) {
-        User user = userRepository.findById(userId)
-                .filter(found -> !found.isDeleted())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
-
-        if (user.getRole() != Role.BRANCH_MANAGER) {
-            throw new InvalidOperationException("Only a Branch Manager can be allowed to run agent payments");
-        }
-        if (user.isCanRunPayments() == allowed) {
-            return userMapper.toUserSummaryResponse(user);
-        }
-
-        user.setCanRunPayments(allowed);
-        User saved = userRepository.save(user);
-        notificationService.notifyInApp(
-                saved.getId(),
-                allowed ? "AGENT_PAYMENT_RUN_GRANTED" : "AGENT_PAYMENT_RUN_REVOKED",
-                allowed
-                        ? "The Administrator has allowed you to run the agent payment calculation."
-                        : "The Administrator has taken back your permission to run the agent payment calculation.",
-                saved.getId());
-        return userMapper.toUserSummaryResponse(saved);
     }
 
     private User.UserBuilder newLogin(CredentialsRequest request, Role role, String displayName) {
@@ -214,8 +247,23 @@ public class UserServiceImpl implements UserService {
                 .password(passwordEncoder.encode(request.password()))
                 .role(role)
                 .displayName(displayName)
+                .email(request.email() == null ? null : checkedEmail(request.email(), null))
                 .active(true)
                 .mustChangePassword(false);
+    }
+
+    // One address means one login, because a password reset can be asked for by email. Blank means none.
+    private String checkedEmail(String email, Long exceptUserId) {
+        if (email.isBlank()) {
+            return null;
+        }
+        String trimmed = email.trim();
+        userRepository.findByEmailIgnoreCaseAndDeletedFalse(trimmed)
+                .filter(other -> !other.getId().equals(exceptUserId))
+                .ifPresent(other -> {
+                    throw new DuplicateResourceException("This email is already used by another login");
+                });
+        return trimmed;
     }
 
     private void rejectIfUsernameTaken(String username) {
@@ -268,6 +316,7 @@ public class UserServiceImpl implements UserService {
         user.setEmployeeId(null);
         user.setAgentId(null);
         user.setBranchId(null);
+        user.setEmail(null);
         userRepository.save(user);
     }
 

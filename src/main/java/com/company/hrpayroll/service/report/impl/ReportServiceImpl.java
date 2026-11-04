@@ -7,6 +7,8 @@ import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.service.common.pdf.DateLabel;
+import com.company.hrpayroll.service.company.CompanyService;
 import com.company.hrpayroll.service.common.pdf.PdfDocumentWriter;
 import com.company.hrpayroll.service.report.ReportService;
 import lombok.RequiredArgsConstructor;
@@ -23,20 +25,29 @@ public class ReportServiceImpl implements ReportService {
 
     private final AttendanceRepository attendanceRepository;
     private final EmployeeRepository employeeRepository;
+    private final CompanyService companyService;
+
+    private static final float[] ATTENDANCE_COLUMNS = {245f, 130f, 120f};
+    private static final float[] EMPLOYEE_COLUMNS = {245f, 100f, 150f};
 
     @Override
     public GeneratedDocument generateAttendanceReport(Long branchId, LocalDate start, LocalDate end) {
         List<Attendance> records = attendanceRepository.findByBranchIdAndAttendanceDateBetween(branchId, start, end);
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            writer.title("Attendance Report");
-            writer.subtitle("Branch ID: " + branchId + "   Period: " + start + " to " + end);
-            writer.divider();
+            writer.documentHeader(
+                    "Attendance Report",
+                    List.of(
+                            new PdfDocumentWriter.Field("Period", DateLabel.range(start, end)),
+                            new PdfDocumentWriter.Field("Branch ID", String.valueOf(branchId))),
+                    companyService.getLetterhead(),
+                    List.of());
+            writer.tableRow(ATTENDANCE_COLUMNS, List.of("Employee", "Date", "Status"), true);
 
             for (Attendance record : records) {
                 String employeeName = employeeRepository.findById(record.getEmployeeId())
                         .map(Employee::getFullName).orElse("Unknown");
-                writer.row(employeeName + " (" + record.getAttendanceDate() + ")", record.getStatus());
+                writer.tableRow(ATTENDANCE_COLUMNS, List.of(employeeName, DateLabel.format(record.getAttendanceDate()), String.valueOf(record.getStatus())), false);
             }
 
             byte[] content = writer.build();
@@ -51,11 +62,11 @@ public class ReportServiceImpl implements ReportService {
         List<Employee> employees = employeeRepository.findByBranchIdIn(branchIds);
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            writer.title("Employee List");
-            writer.divider();
+            writer.documentHeader("Employee List", List.of(), companyService.getLetterhead(), List.of());
+            writer.tableRow(EMPLOYEE_COLUMNS, List.of("Name", "Code", "Position"), true);
 
             for (Employee employee : employees) {
-                writer.row(employee.getFullName() + " (" + employee.getEmployeeNumber() + ")", employee.getPosition());
+                writer.tableRow(EMPLOYEE_COLUMNS, List.of(employee.getFullName(), employee.getEmployeeNumber(), employee.getPosition() != null ? employee.getPosition() : "-"), false);
             }
 
             byte[] content = writer.build();

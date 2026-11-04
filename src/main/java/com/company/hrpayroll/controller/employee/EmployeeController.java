@@ -1,6 +1,7 @@
 // controller/employee/EmployeeController.java
 package com.company.hrpayroll.controller.employee;
 
+import com.company.hrpayroll.audit.AuditDetails;
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.employee.DepartmentAssignmentRequest;
 import com.company.hrpayroll.dto.request.employee.EmployeeRequest;
@@ -11,6 +12,7 @@ import com.company.hrpayroll.dto.response.employee.EmployeeResponse;
 import com.company.hrpayroll.dto.response.employee.EmployeeSummaryResponse;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.security.AccessGuard;
+import com.company.hrpayroll.service.audit.AuditService;
 import com.company.hrpayroll.service.employee.EmployeeExportService;
 import com.company.hrpayroll.service.employee.EmployeeService;
 import jakarta.validation.Valid;
@@ -32,6 +34,7 @@ public class EmployeeController {
     private final EmployeeService employeeService;
     private final EmployeeExportService employeeExportService;
     private final AccessGuard accessGuard;
+    private final AuditService auditService;
 
     // Admin adds employees directly. Branch Managers and Agents propose them through
     // POST /employee-requests and an Admin approves (see EmployeeCreationRequestController).
@@ -102,7 +105,7 @@ public class EmployeeController {
             if (accessGuard.currentAgentId() == null) {
                 throw new InvalidOperationException("Your account is not linked to an agent record.");
             }
-            document = employeeExportService.export(format, branchId, accessGuard.currentAgentId(), true);
+            document = employeeExportService.export(format, branchId, accessGuard.currentAgentId(), false);
         } else if (accessGuard.isBranchManager()) {
             if (accessGuard.currentBranchId() == null) {
                 throw new InvalidOperationException("Your account is not assigned to a branch. Ask an Admin to assign you one.");
@@ -144,7 +147,9 @@ public class EmployeeController {
     @GetMapping("/my-directory/by-branch/{branchId}")
     @PreAuthorize("hasRole('AGENT')")
     public ApiResponse<List<EmployeeDirectoryResponse>> getMyBranchDirectory(@PathVariable Long branchId) {
-        return ApiResponse.success(employeeService.getBranchDirectoryForAgent(branchId, accessGuard.currentAgentId()));
+        return ApiResponse.success(employeeService.getBranchDirectoryForAgent(branchId, accessGuard.currentAgentId()).stream()
+                .map(EmployeeDirectoryResponse::withoutSalary)
+                .toList());
     }
 
     // The Agent Portal boundary — an agent only ever sees their own workers.
@@ -157,6 +162,11 @@ public class EmployeeController {
     @GetMapping("/by-department/{departmentId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER', 'AUDITOR', 'BACK_OFFICE')")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByDepartment(@PathVariable Long departmentId) {
+        // A department spans every branch, but a Branch Manager only ever sees their own branch's staff.
+        if (accessGuard.isBranchManager()) {
+            return ApiResponse.success(
+                    employeeService.getEmployeesByDepartmentInBranch(departmentId, accessGuard.currentBranchId()));
+        }
         return ApiResponse.success(employeeService.getEmployeesByDepartment(departmentId));
     }
 
@@ -171,11 +181,16 @@ public class EmployeeController {
 
     @PutMapping("/{id}/branch")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
-    @Auditable(action = "EMPLOYEE_BRANCH_CHANGED", entityType = "Employee")
     public ApiResponse<EmployeeResponse> assignBranch(
             @PathVariable Long id, @Valid @RequestBody EmployeeBranchRequest request
     ) {
-        return ApiResponse.success("Branch changed", employeeService.assignBranch(id, request.branchId()));
+        String from = employeeService.getEmployeeById(id).branchName();
+        EmployeeResponse moved = employeeService.assignBranch(id, request.branchId());
+
+        // Logged by hand rather than with @Auditable, so the history says where they moved from and to.
+        auditService.record(accessGuard.currentUserId(), "EMPLOYEE_BRANCH_CHANGED", "Employee", id,
+                AuditDetails.withRequest("fromBranch", from, "toBranch", moved.branchName()));
+        return ApiResponse.success("Branch changed", moved);
     }
 
     @DeleteMapping("/{id}")

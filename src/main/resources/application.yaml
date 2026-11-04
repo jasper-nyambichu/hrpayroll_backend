@@ -41,23 +41,30 @@ spring:
     virtual:
       enabled: true
 
+  # Local defaults point at MailHog (http://localhost:8025). Production sets the MAIL_ variables.
   mail:
-    host: localhost
-    port: 1025
-    username: ""
-    password: ""
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: false
+          auth: ${MAIL_SMTP_AUTH:false}
           starttls:
-            enable: false
+            enable: ${MAIL_SMTP_STARTTLS:false}
 
 server:
   address: 0.0.0.0
   port: 8081
 
 app:
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  mail:
+    from: ${MAIL_FROM:no-reply@dhwarsh.local}
+  biometric:
+    # Base64 of 32 random bytes. Back it up: losing it means every fingerprint has to be enrolled again.
+    template-key: ${BIOMETRIC_TEMPLATE_KEY:}
   jwt:
     secret: 24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=
     access-token-expiry-ms: 900000

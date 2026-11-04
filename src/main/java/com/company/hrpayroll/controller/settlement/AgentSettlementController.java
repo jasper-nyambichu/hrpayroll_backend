@@ -5,17 +5,20 @@ import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.settlement.AgentSettlementRunRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.common.GeneratedDocument;
+import com.company.hrpayroll.dto.response.settlement.AgentPaymentReadinessResponse;
 import com.company.hrpayroll.dto.response.settlement.AgentSettlementResponse;
 import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.settlement.AgentSettlementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -28,14 +31,21 @@ public class AgentSettlementController {
 
     private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
 
-    // A Branch Manager the Admin has allowed runs the same calculation for every agent, standing in for
-    // the Admin, but is not given the amounts: those stay with the Admin and each agent.
     @PostMapping("/calculate")
-    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.canRunAgentPayments()")
+    @PreAuthorize(ADMIN_ROLES)
     @Auditable(action = "AGENT_PAYMENTS_CALCULATED", entityType = "AgentSettlement")
     public ApiResponse<List<AgentSettlementResponse>> calculate(@Valid @RequestBody AgentSettlementRunRequest request) {
-        List<AgentSettlementResponse> results = settlementService.calculate(request, accessGuard.currentUserId());
-        return ApiResponse.success("Agent payments calculated", accessGuard.isBranchManager() ? List.of() : results);
+        return ApiResponse.success("Agent payments calculated", settlementService.calculate(request, accessGuard.currentUserId()));
+    }
+
+    // What still stands between this period and a calculation. Changes nothing.
+    @GetMapping("/readiness")
+    @PreAuthorize(ADMIN_ROLES)
+    public ApiResponse<AgentPaymentReadinessResponse> getReadiness(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodStart,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodEnd
+    ) {
+        return ApiResponse.success(settlementService.getReadiness(periodStart, periodEnd));
     }
 
     // Every agent's payments, newest period first.

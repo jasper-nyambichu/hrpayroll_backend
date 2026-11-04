@@ -17,6 +17,7 @@ public record EmployeeCreationRequestResponse(
         LocalDateTime reviewedAt,
         String rejectionReason,
         Long createdEmployeeId,
+        Long branchId,
         String branchName,
         String departmentName,
         String agentName,

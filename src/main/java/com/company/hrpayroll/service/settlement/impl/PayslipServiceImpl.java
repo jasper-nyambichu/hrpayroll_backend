@@ -16,6 +16,7 @@ import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.payment.EmployeePaymentRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
 import com.company.hrpayroll.repository.settlement.EmployeePayslipRepository;
+import com.company.hrpayroll.service.common.pdf.DateLabel;
 import com.company.hrpayroll.service.common.pdf.PdfDocumentWriter;
 import com.company.hrpayroll.service.company.CompanyService;
 import com.company.hrpayroll.service.settlement.PayslipService;
@@ -37,6 +38,8 @@ import static com.company.hrpayroll.service.common.pdf.AmountFormatter.format;
 @Service
 @RequiredArgsConstructor
 public class PayslipServiceImpl implements PayslipService {
+
+    private static final float[] PAYMENT_COLUMNS = {165f, 165f, 165f};
 
     private final EmployeePayslipRepository payslipRepository;
     private final AgentSettlementRepository settlementRepository;
@@ -83,43 +86,59 @@ public class PayslipServiceImpl implements PayslipService {
         PayslipResponse payslip = getById(payslipId);
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            companyService.writeLetterhead(writer);
-            writer.title("Payslip");
-            writer.subtitle(payslip.employeeName() + " (" + payslip.employeeNumber() + ")");
-            writer.subtitle("Period: " + payslip.periodStart() + " to " + payslip.periodEnd());
-            writer.subtitle("Branch: " + orDash(payslip.branchName()) + "   Agent: " + orDash(payslip.agentName()));
-            writer.divider();
-
-            writer.sectionHeading("Earnings");
-            writer.row(payslip.daysWorked() + " days x " + format(payslip.dailyRate()), format(payslip.pay()));
-            writer.row("PAYE", format(payslip.paye()));
-            writer.row("NSSF", format(payslip.nssf()));
-            writer.row("NITA", format(payslip.nita()));
-
-            writer.sectionHeading("Deductions");
-            writer.row("Loans", "(" + format(payslip.loan()) + ")");
-            writer.row("Damages", "(" + format(payslip.damage()) + ")");
-
-            writer.divider();
-            writer.boldRow("Amount Paid to the Agent for This Employee", format(payslip.amountDue()));
-            writer.subtitle("Includes PAYE, NSSF and NITA, which the agent deducts and pays to the government.");
-
-            writer.sectionHeading("Payments Recorded by the Agent");
-            if (payslip.payments().isEmpty()) {
-                writer.row("None recorded yet", "");
-            }
-            for (PayslipResponse.RecordedPayment payment : payslip.payments()) {
-                writer.row(payment.paidOn() + "   M-Pesa " + payment.mpesaCode(), format(payment.amount()));
-            }
-            writer.divider();
-            writer.row("Total recorded", format(payslip.amountRecorded()));
-            writer.boldRow("Not yet recorded", format(payslip.amountNotRecorded()));
+            writePayslip(writer, payslip, companyService.getLetterhead());
 
             String fileName = "payslip-" + payslip.employeeNumber() + "-" + payslip.periodEnd() + ".pdf";
             return new GeneratedDocument(fileName, "application/pdf", writer.build());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to generate payslip PDF", e);
         }
+    }
+
+    static void writePayslip(PdfDocumentWriter writer, PayslipResponse payslip, PdfDocumentWriter.Letterhead company) throws IOException {
+        writer.documentHeader(
+                "Payslip",
+                List.of(new PdfDocumentWriter.Field("Pay Period", DateLabel.range(payslip.periodStart(), payslip.periodEnd()))),
+                company,
+                List.of(
+                        new PdfDocumentWriter.Field("Employee Name", orDash(payslip.employeeName())),
+                        new PdfDocumentWriter.Field("Employee No", orDash(payslip.employeeNumber())),
+                        new PdfDocumentWriter.Field("Branch", orDash(payslip.branchName())),
+                        new PdfDocumentWriter.Field("Agent", orDash(payslip.agentName())),
+                        new PdfDocumentWriter.Field("Days Worked", String.valueOf(payslip.daysWorked()))));
+
+        writer.sectionTitle("Income Details");
+        writer.moneyHeader("Amount (KES)");
+        writer.moneyRow(1, payslip.daysWorked() + " days x " + format(payslip.dailyRate()), format(payslip.pay()));
+        writer.moneyRow(2, "PAYE", format(payslip.paye()));
+        writer.moneyRow(3, "NSSF", format(payslip.nssf()));
+        writer.moneyRow(4, "NITA", format(payslip.nita()));
+        writer.moneyTotal("Total Income", "KES " + format(payslip.pay().add(payslip.paye()).add(payslip.nssf()).add(payslip.nita())));
+
+        writer.sectionTitle("Deduction Details");
+        writer.moneyRow(1, "Loans", format(payslip.loan()));
+        writer.moneyRow(2, "Damages", format(payslip.damage()));
+        writer.moneyTotal("Total Deductions", "KES " + format(payslip.loan().add(payslip.damage())));
+
+        writer.netBar("Amount Paid to the Agent", "KES " + format(payslip.amountDue()));
+        writer.note("Includes PAYE, NSSF and NITA, which the agent deducts and pays to the government.");
+
+        if (!payslip.payments().isEmpty()) {
+            writer.sectionHeading("Payments Recorded by the Agent");
+            writer.tableRow(PAYMENT_COLUMNS, List.of("Date", "M-Pesa Code", "Amount (KES)"), true);
+            for (PayslipResponse.RecordedPayment payment : payslip.payments()) {
+                writer.tableRow(PAYMENT_COLUMNS, List.of(DateLabel.format(payment.paidOn()), payment.mpesaCode(), format(payment.amount())), false);
+            }
+        }
+
+        writer.signatureBlock(
+                "Payment Details:",
+                List.of(
+                        "Method: M-Pesa",
+                        "Recorded: KES " + format(payslip.amountRecorded()),
+                        "Not yet recorded: KES " + format(payslip.amountNotRecorded())),
+                "Administrator",
+                orDash(payslip.employeeName()));
     }
 
     // ---- helpers ----

@@ -4,6 +4,7 @@ package com.company.hrpayroll.security;
 import com.company.hrpayroll.dto.request.shift.ShiftAssignmentRequest;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
+import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AccessGuard {
 
+    private final AttendanceRepository attendanceRepository;
     private final EmployeeRepository employeeRepository;
     private final AgentSettlementRepository agentSettlementRepository;
     private final EmployeePayslipRepository employeePayslipRepository;
@@ -51,6 +53,13 @@ public class AccessGuard {
         }
         return employeeRepository.findById(employeeId)
                 .map(employee -> user.getBranchId().equals(employee.getBranchId()))
+                .orElse(false);
+    }
+
+    // The record's own branch, not the employee's: it stays where the day was worked. Fails closed for an unknown id.
+    public boolean isAttendanceInMyBranch(Long attendanceId) {
+        return attendanceRepository.findById(attendanceId)
+                .map(attendance -> isSameBranch(attendance.getBranchId()))
                 .orElse(false);
     }
 
@@ -120,11 +129,6 @@ public class AccessGuard {
 
     public boolean isAgent() {
         return currentUser().getRole() == Role.AGENT;
-    }
-
-    public boolean canRunAgentPayments() {
-        User user = currentUser();
-        return user.getRole() == Role.BRANCH_MANAGER && user.isCanRunPayments();
     }
 
     public boolean isBranchManager() {

@@ -16,9 +16,11 @@ public interface UserService {
     void changePassword(Long userId, ChangePasswordRequest request);
     void deactivateUser(Long userId);
     void deleteUser(Long userId, Long actingUserId);
-    UserSummaryResponse assignBackOfficeBranch(Long userId, Long branchId);
+    // With swap, a Branch Manager and the one already at the branch trade places. Who moved is returned for the history.
+    BranchMove assignBranch(Long userId, Long branchId, boolean swap);
+
+    record BranchMove(UserSummaryResponse moved, UserSummaryResponse swappedWith) {}
     UserSummaryResponse createBranchLogin(Long branchId, Role role, CredentialsRequest request);
     UserSummaryResponse createAgentLogin(Long agentId, CredentialsRequest request);
     UserSummaryResponse changeCredentials(Long userId, CredentialsRequest request);
-    UserSummaryResponse setRunPayments(Long userId, boolean allowed);
 }

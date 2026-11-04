@@ -54,8 +54,9 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
             return List.of();
         }
 
+        // By employee, not branch: someone moved here after their old branch locked the period is still locked.
         Map<Long, DaysWorkedRecord> locked = daysWorkedRecordRepository
-                .findByBranchIdAndPeriodStartAndPeriodEnd(branchId, periodStart, periodEnd).stream()
+                .findByEmployeeIdInAndPeriodStartAndPeriodEnd(employees.stream().map(Employee::getId).toList(), periodStart, periodEnd).stream()
                 .collect(Collectors.toMap(DaysWorkedRecord::getEmployeeId, Function.identity(), (a, b) -> a));
 
         Map<Long, Integer> systemDays = countSystemDays(
@@ -79,23 +80,40 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
         LocalDate end = request.periodEnd();
         validatePeriod(start, end);
 
-        List<Employee> employees = activeEmployeesOfBranch(request.branchId());
-        if (employees.isEmpty()) {
+        List<Employee> branchEmployees = activeEmployeesOfBranch(request.branchId());
+        if (branchEmployees.isEmpty()) {
             throw new InvalidOperationException("This branch has no active employees to lock days for");
         }
-        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
+        List<Long> branchIds = branchEmployees.stream().map(Employee::getId).toList();
 
-        // A day must never be counted in two periods, nor a period locked twice.
-        if (!daysWorkedRecordRepository
-                .findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(employeeIds, end, start)
-                .isEmpty()) {
+        // A day must never be counted in two periods, nor a period locked twice. The one exception is
+        // someone moved here after their old branch locked this same period: their figure stands, and
+        // they must not stop the rest of this branch from locking.
+        Set<Long> alreadyLockedElsewhere = new HashSet<>();
+        for (DaysWorkedRecord overlap : daysWorkedRecordRepository
+                .findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(branchIds, end, start)) {
+            boolean samePeriodAtOldBranch = !request.branchId().equals(overlap.getBranchId())
+                    && start.equals(overlap.getPeriodStart())
+                    && end.equals(overlap.getPeriodEnd());
+            if (!samePeriodAtOldBranch) {
+                throw new InvalidOperationException(
+                        "Days are already locked for part of this period. Unlock them first to lock again.");
+            }
+            alreadyLockedElsewhere.add(overlap.getEmployeeId());
+        }
+
+        List<Employee> employees = branchEmployees.stream()
+                .filter(employee -> !alreadyLockedElsewhere.contains(employee.getId()))
+                .toList();
+        if (employees.isEmpty()) {
             throw new InvalidOperationException(
                     "Days are already locked for part of this period. Unlock them first to lock again.");
         }
+        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
 
         long periodLength = ChronoUnit.DAYS.between(start, end) + 1;
         Map<Long, DaysWorkedAdjustmentRequest> adjustments = new HashMap<>();
-        Set<Long> branchEmployeeIds = new HashSet<>(employeeIds);
+        Set<Long> branchEmployeeIds = new HashSet<>(branchIds);
         if (request.adjustments() != null) {
             for (DaysWorkedAdjustmentRequest adjustment : request.adjustments()) {
                 if (!branchEmployeeIds.contains(adjustment.employeeId())) {

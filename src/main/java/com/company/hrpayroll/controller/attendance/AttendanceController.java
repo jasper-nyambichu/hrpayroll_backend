@@ -25,13 +25,15 @@ public class AttendanceController {
     private final AccessGuard accessGuard;
 
     @PostMapping("/clock-in")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'BACK_OFFICE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BACK_OFFICE') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
     public ApiResponse<AttendanceResponse> clockInManually(@Valid @RequestBody AttendanceRequest request) {
         return ApiResponse.success("Clocked in", attendanceService.clockInManually(request));
     }
 
     @PutMapping("/{attendanceId}/clock-out")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'BACK_OFFICE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BACK_OFFICE') " +
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isAttendanceInMyBranch(#attendanceId))")
     public ApiResponse<AttendanceResponse> clockOutManually(
             @PathVariable Long attendanceId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime clockOutTime

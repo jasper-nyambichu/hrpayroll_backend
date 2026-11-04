@@ -3,11 +3,11 @@ package com.company.hrpayroll.service.settlement.impl;
 
 import com.company.hrpayroll.dto.request.settlement.AgentSettlementRunRequest;
 import com.company.hrpayroll.dto.response.common.GeneratedDocument;
+import com.company.hrpayroll.dto.response.settlement.AgentPaymentReadinessResponse;
 import com.company.hrpayroll.dto.response.settlement.AgentSettlementResponse;
 import com.company.hrpayroll.entity.agent.Agent;
-import com.company.hrpayroll.entity.auth.Role;
-import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.company.CompanySettings;
+import com.company.hrpayroll.entity.branch.Branch;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.settlement.AgentSettlement;
 import com.company.hrpayroll.entity.settlement.EmployeePayslip;
@@ -16,18 +16,18 @@ import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.exception.SettlementInProgressException;
 import com.company.hrpayroll.mapper.settlement.AgentSettlementMapper;
 import com.company.hrpayroll.repository.agent.AgentRepository;
-import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.company.CompanySettingsRepository;
+import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
 import com.company.hrpayroll.repository.settlement.EmployeePayslipRepository;
 import com.company.hrpayroll.service.agentadvance.AgentAdvanceService;
+import com.company.hrpayroll.service.common.pdf.DateLabel;
 import com.company.hrpayroll.service.common.pdf.PdfDocumentWriter;
 import com.company.hrpayroll.service.company.CompanyService;
 import com.company.hrpayroll.service.damage.DamageService;
 import com.company.hrpayroll.service.dayswork.DaysWorkedService;
 import com.company.hrpayroll.service.loan.LoanService;
-import com.company.hrpayroll.service.notification.NotificationService;
 import com.company.hrpayroll.service.payment.PaymentRequestService;
 import com.company.hrpayroll.service.settlement.AgentSettlementCalculator;
 import com.company.hrpayroll.service.settlement.AgentSettlementService;
@@ -42,6 +42,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,6 +59,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
     private final AgentRepository agentRepository;
     private final EmployeeRepository employeeRepository;
     private final CompanySettingsRepository companySettingsRepository;
+    private final BranchRepository branchRepository;
 
     private final AgentSettlementCalculator calculator;
     private final SettlementLockService lockService;
@@ -68,8 +70,6 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
     private final PaymentRequestService paymentRequestService;
     private final AgentSettlementMapper mapper;
     private final CompanyService companyService;
-    private final UserRepository userRepository;
-    private final NotificationService notificationService;
 
     // Single transaction: every agent's settlement commits, or none does. The advisory lock stops two
     // Admins recovering the same advance or deducting the same loan at the same moment.
@@ -106,23 +106,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
             AgentSettlement saved = settleAgent(agent, entry.getValue(), lockedDays, settings, start, end, adminUserId);
             results.add(mapper.toResponse(saved, agent.getName()));
         }
-        notifyAdminsIfRunByManager(adminUserId, results.size(), start, end);
         return results;
-    }
-
-    // Balances have moved and payments now wait for release, so the Admin must hear of a stand-in's run.
-    private void notifyAdminsIfRunByManager(Long userId, int agentCount, LocalDate start, LocalDate end) {
-        userRepository.findById(userId)
-                .filter(user -> user.getRole() == Role.BRANCH_MANAGER)
-                .ifPresent(manager -> {
-                    String message = manager.getUsername() + " ran the agent payment calculation for " + start + " to " + end
-                            + " (" + agentCount + " agent(s)). They now wait for you under Money Requests.";
-                    for (Role role : List.of(Role.ADMIN, Role.SUPER_ADMIN)) {
-                        userRepository.findByRole(role).stream()
-                                .filter(User::isActive)
-                                .forEach(admin -> notificationService.notifyInApp(admin.getId(), "AGENT_PAYMENTS_RUN_BY_MANAGER", message, null));
-                    }
-                });
     }
 
     private AgentSettlement settleAgent(
@@ -192,7 +176,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         }
 
         if (totals.payable().compareTo(BigDecimal.ZERO) > 0) {
-            String purpose = "Agent payment for " + start + " to " + end;
+            String purpose = "Agent payment for " + DateLabel.range(start, end);
             settlement.setPaymentRequestId(paymentRequestService.createApproved(
                     agent.getId(), totals.payable(), purpose, adminUserId));
         }
@@ -215,6 +199,47 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         return toResponse(findOrThrow(settlementId));
     }
 
+    // Reads only. Uses the same rules as calculate, so the answer here is the answer it would give.
+    @Override
+    public AgentPaymentReadinessResponse getReadiness(LocalDate start, LocalDate end) {
+        if (end.isBefore(start)) {
+            throw new InvalidOperationException("Period end cannot be before period start");
+        }
+
+        Map<Long, List<Employee>> employeesByAgent = resolveEmployees(null);
+        List<Employee> employees = employeesByAgent.values().stream().flatMap(List::stream).toList();
+        Set<Long> locked = employees.isEmpty()
+                ? Set.of()
+                : daysWorkedService.getLockedDays(employees.stream().map(Employee::getId).toList(), start, end).keySet();
+
+        Map<Long, String> branchNames = branchRepository.findAll().stream()
+                .collect(Collectors.toMap(Branch::getId, Branch::getName));
+        List<AgentPaymentReadinessResponse.BranchReadiness> branches = employees.stream()
+                .collect(Collectors.groupingBy(Employee::getBranchId))
+                .entrySet().stream()
+                .map(entry -> new AgentPaymentReadinessResponse.BranchReadiness(
+                        entry.getKey(),
+                        branchNames.getOrDefault(entry.getKey(), "Branch #" + entry.getKey()),
+                        entry.getValue().size(),
+                        (int) entry.getValue().stream().filter(employee -> locked.contains(employee.getId())).count()))
+                .sorted(Comparator.comparing(AgentPaymentReadinessResponse.BranchReadiness::branchName))
+                .toList();
+
+        List<String> alreadyPaid = employeesByAgent.isEmpty()
+                ? List.of()
+                : settlementRepository.findAgentIdsPaidForOverlappingPeriod(employeesByAgent.keySet(), start, end).stream()
+                        .distinct()
+                        .map(id -> findAgentOrThrow(id).getName())
+                        .sorted()
+                        .toList();
+
+        boolean ready = !employees.isEmpty()
+                && alreadyPaid.isEmpty()
+                && branches.stream().allMatch(branch -> branch.lockedCount() == branch.employeeCount());
+
+        return new AgentPaymentReadinessResponse(start, end, ready, branches, alreadyPaid);
+    }
+
     @Override
     public GeneratedDocument getInvoice(Long settlementId) {
         AgentSettlement settlement = findOrThrow(settlementId);
@@ -222,24 +247,30 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         BigDecimal subtotal = subtotalBeforeVat(settlement);
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            companyService.writeLetterhead(writer);
-            writer.title("Agent Invoice");
-            writer.subtitle("Reference: #" + settlement.getId());
-            writer.subtitle("Agent KRA PIN: " + (agent.getKraPin() != null ? agent.getKraPin() : "-"));
-            writer.divider();
+            writer.documentHeader(
+                    "Agent Invoice",
+                    List.of(
+                            new PdfDocumentWriter.Field("Reference", "#" + settlement.getId()),
+                            new PdfDocumentWriter.Field("Period", DateLabel.range(settlement.getPeriodStart(), settlement.getPeriodEnd()))),
+                    companyService.getLetterhead(),
+                    List.of(
+                            new PdfDocumentWriter.Field("Supplier", agent.getName()),
+                            new PdfDocumentWriter.Field("KRA PIN", agent.getKraPin() != null ? agent.getKraPin() : "-")));
 
-            writer.row("Supplier", agent.getName());
-            writer.row("Period", settlement.getPeriodStart() + " to " + settlement.getPeriodEnd());
-            writer.divider();
+            writer.sectionTitle("Invoice Details");
+            writer.moneyHeader("Amount (KES)");
+            writer.moneyRow(1, "Amount Before VAT", format(subtotal));
+            writer.moneyRow(2, "VAT (" + format(settlement.getVatRateUsed()) + "%)", format(settlement.getVatAmount()));
+            writer.moneyTotal("Total Before Deductions", "KES " + format(subtotal.add(settlement.getVatAmount())));
 
-            writer.row("Amount Before VAT", format(subtotal));
-            writer.row("VAT (" + format(settlement.getVatRateUsed()) + "%)", format(settlement.getVatAmount()));
-            writer.row("Less: Loans", "(" + format(settlement.getLoanTotal()) + ")");
-            writer.row("Less: Damages", "(" + format(settlement.getDamageTotal()) + ")");
-            writer.row("Less: Advances", "(" + format(settlement.getAdvanceRecovered()) + ")");
+            writer.sectionTitle("Deduction Details");
+            writer.moneyRow(1, "Loans", format(settlement.getLoanTotal()));
+            writer.moneyRow(2, "Damages", format(settlement.getDamageTotal()));
+            writer.moneyRow(3, "Advances", format(settlement.getAdvanceRecovered()));
+            writer.moneyTotal("Total Deductions", "KES " + format(totalDeductions(settlement)));
 
-            writer.divider();
-            writer.boldRow("Total Amount Due", format(settlement.getAmountPayable()));
+            writer.netBar("Total Amount Due", "KES " + format(settlement.getAmountPayable()));
+            writer.signatureBlock("Payment Details:", List.of("Released under Money Requests"), "Administrator", agent.getName());
 
             String fileName = "agent-invoice-" + agent.getId() + "-" + settlement.getId() + ".pdf";
             return new GeneratedDocument(fileName, "application/pdf", writer.build());
@@ -254,33 +285,35 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         Agent agent = findAgentOrThrow(settlement.getAgentId());
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            companyService.writeLetterhead(writer);
-            writer.title("Agent Payment Statement");
-            writer.subtitle("Agent: " + agent.getName());
-            writer.subtitle("Period: " + settlement.getPeriodStart() + " to " + settlement.getPeriodEnd());
-            writer.subtitle("Employees: " + settlement.getEmployeeCount() + "   Days worked: " + settlement.getDaysWorkedTotal());
-            writer.divider();
+            writer.documentHeader(
+                    "Payment Statement",
+                    List.of(new PdfDocumentWriter.Field("Period", DateLabel.range(settlement.getPeriodStart(), settlement.getPeriodEnd()))),
+                    companyService.getLetterhead(),
+                    List.of(
+                            new PdfDocumentWriter.Field("Agent", agent.getName()),
+                            new PdfDocumentWriter.Field("Employees", String.valueOf(settlement.getEmployeeCount())),
+                            new PdfDocumentWriter.Field("Days Worked", String.valueOf(settlement.getDaysWorkedTotal()))));
 
-            writer.sectionHeading("Additions");
-            writer.row("Pay for days worked", format(settlement.getDaysPay()));
-            writer.row("PAYE", format(settlement.getPayeTotal()));
-            writer.row("NSSF", format(settlement.getNssfTotal()));
-            writer.row("NITA", format(settlement.getNitaTotal()));
-            writer.row("Agent fee", format(settlement.getAgentFee()));
-            writer.row("VAT (" + format(settlement.getVatRateUsed()) + "%)", format(settlement.getVatAmount()));
+            writer.sectionTitle("Additions");
+            writer.moneyHeader("Amount (KES)");
+            writer.moneyRow(1, "Pay for days worked", format(settlement.getDaysPay()));
+            writer.moneyRow(2, "PAYE", format(settlement.getPayeTotal()));
+            writer.moneyRow(3, "NSSF", format(settlement.getNssfTotal()));
+            writer.moneyRow(4, "NITA", format(settlement.getNitaTotal()));
+            writer.moneyRow(5, "Agent fee", format(settlement.getAgentFee()));
+            writer.moneyRow(6, "VAT (" + format(settlement.getVatRateUsed()) + "%)", format(settlement.getVatAmount()));
+            writer.moneyTotal("Total Additions", "KES " + format(subtotalBeforeVat(settlement).add(settlement.getVatAmount())));
 
-            writer.sectionHeading("Deductions");
-            writer.row("Loans", "(" + format(settlement.getLoanTotal()) + ")");
-            writer.row("Damages", "(" + format(settlement.getDamageTotal()) + ")");
-            writer.row("Advances", "(" + format(settlement.getAdvanceRecovered()) + ")");
+            writer.sectionTitle("Deduction Details");
+            writer.moneyRow(1, "Loans", format(settlement.getLoanTotal()));
+            writer.moneyRow(2, "Damages", format(settlement.getDamageTotal()));
+            writer.moneyRow(3, "Advances", format(settlement.getAdvanceRecovered()));
+            writer.moneyTotal("Total Deductions", "KES " + format(totalDeductions(settlement)));
 
-            writer.divider();
-            writer.boldRow("Amount Payable to Agent", format(settlement.getAmountPayable()));
-
-            writer.sectionHeading("For the Government");
-            writer.row("PAYE, NSSF and NITA included above",
-                    format(settlement.getPayeTotal().add(settlement.getNssfTotal()).add(settlement.getNitaTotal())));
-            writer.subtitle("The agent deducts these, with SHIF and any other statutory amounts, and pays them to the government.");
+            writer.netBar("Amount Payable to Agent", "KES " + format(settlement.getAmountPayable()));
+            writer.note("PAYE, NSSF and NITA included above: KES "
+                    + format(settlement.getPayeTotal().add(settlement.getNssfTotal()).add(settlement.getNitaTotal()))
+                    + ". The agent deducts these, with SHIF and any other statutory amounts, and pays them to the government.");
 
             String fileName = "agent-statement-" + agent.getId() + "-" + settlement.getId() + ".pdf";
             return new GeneratedDocument(fileName, "application/pdf", writer.build());
@@ -290,6 +323,10 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
     }
 
     // ---- helpers ----
+
+    private BigDecimal totalDeductions(AgentSettlement settlement) {
+        return settlement.getLoanTotal().add(settlement.getDamageTotal()).add(settlement.getAdvanceRecovered());
+    }
 
     private BigDecimal subtotalBeforeVat(AgentSettlement settlement) {
         return settlement.getDaysPay()
@@ -333,7 +370,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
                 .collect(Collectors.joining(", "));
 
         throw new InvalidOperationException(
-                alreadyPaid.size() + " agent(s) have already been paid for part of " + start + " to " + end
+                alreadyPaid.size() + " agent(s) have already been paid for part of " + DateLabel.range(start, end)
                         + " (" + names + "). Choose a different period.");
     }
 
@@ -355,7 +392,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
                 .collect(Collectors.joining(", "));
 
         throw new InvalidOperationException(
-                missing.size() + " employee(s) have no locked days worked for " + start + " to " + end
+                missing.size() + " employee(s) have no locked days worked for " + DateLabel.range(start, end)
                         + " (e.g. " + examples + "). The Back Office or an Admin must lock the days for those branches "
                         + "for exactly this period first, under Days Worked.");
     }

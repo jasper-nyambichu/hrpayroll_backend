@@ -7,13 +7,11 @@ import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
 import com.company.hrpayroll.entity.attendance.Attendance;
 import com.company.hrpayroll.entity.attendance.AttendanceSource;
 import com.company.hrpayroll.entity.attendance.BiometricDevice;
-import com.company.hrpayroll.entity.attendance.BiometricDeviceMapping;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.leave.LeaveStatus;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
-import com.company.hrpayroll.repository.attendance.BiometricDeviceMappingRepository;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
@@ -36,7 +34,7 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     private final AttendanceRepository attendanceRepository;
     private final EmployeeRepository employeeRepository;
     private final BiometricDeviceRepository biometricDeviceRepository;
-    private final BiometricDeviceMappingRepository mappingRepository;
+    private final TerminalIdentity terminalIdentity;
     private final LeaveRequestRepository leaveRequestRepository;
     private final BiometricSyncFailureLogger failureLogger;   // separate bean => REQUIRES_NEW really applies
     private final BusinessClock businessClock;
@@ -67,18 +65,16 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
             throw rejected(request, null, "Unsupported event type: " + request.eventType());
         }
 
-        BiometricDeviceMapping mapping = mappingRepository
-                .findByDeviceIdAndTerminalUserId(device.getId(), request.terminalUserId())
-                .orElse(null);
-        if (mapping == null) {
+        Long employeeId = terminalIdentity.employeeFor(device.getId(), request.terminalUserId()).orElse(null);
+        if (employeeId == null) {
             throw rejected(request, null, "No employee mapped to terminal user id " + request.terminalUserId()
                     + " on device " + request.deviceSerial());
         }
 
-        Employee employee = employeeRepository.findById(mapping.getEmployeeId()).orElse(null);
+        Employee employee = employeeRepository.findById(employeeId).orElse(null);
         if (employee == null) {
-            failureLogger.log(request, mapping.getEmployeeId(), "Employee not found with id: " + mapping.getEmployeeId());
-            throw new ResourceNotFoundException("Employee not found with id: " + mapping.getEmployeeId());
+            failureLogger.log(request, employeeId, "Employee not found with id: " + employeeId);
+            throw new ResourceNotFoundException("Employee not found with id: " + employeeId);
         }
 
         if (!employee.getBranchId().equals(device.getBranchId())) {

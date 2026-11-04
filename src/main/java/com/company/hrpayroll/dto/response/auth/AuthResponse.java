@@ -19,5 +19,6 @@ public record AuthResponse(
         Long employeeId,
         Long agentId,
         Long branchId,
-        boolean mustChangePassword
+        boolean mustChangePassword,
+        boolean hasPhoto
 ) {}

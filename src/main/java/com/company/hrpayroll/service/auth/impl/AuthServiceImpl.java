@@ -12,6 +12,7 @@ import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.exception.AccountLockedException;
 import com.company.hrpayroll.exception.InvalidCredentialsException;
+import com.company.hrpayroll.repository.auth.UserPhotoRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.security.CustomUserDetailsService;
@@ -54,6 +55,7 @@ public class AuthServiceImpl implements AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
+    private final UserPhotoRepository userPhotoRepository;
     private final EmployeeRepository employeeRepository;
     private final CustomUserDetailsService userDetailsService;
     private final JwtService jwtService;
@@ -183,7 +185,8 @@ public class AuthServiceImpl implements AuthService {
                 user.getEmployeeId(),
                 user.getAgentId(),
                 user.getBranchId(),
-                user.isMustChangePassword()
+                user.isMustChangePassword(),
+                userPhotoRepository.existsByUserId(user.getId())
         );
     }
 }

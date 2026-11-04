@@ -20,6 +20,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByBranchId(Long branchId);
 
+    Optional<User> findByEmailIgnoreCaseAndDeletedFalse(String email);
+
     Optional<User> findByEmployeeId(Long employeeId);
 
     // Login accounts for a set of employees — used to address payslip notifications.

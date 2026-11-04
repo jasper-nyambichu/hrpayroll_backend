@@ -19,6 +19,6 @@ public interface CompanyService {
 
     GeneratedDocument getLogo();
 
-    // The logo and company name at the top of a generated document. Prints nothing when not set up.
-    void writeLetterhead(PdfDocumentWriter writer) throws IOException;
+    // The current logo and contact details for a generated document's header. Null when not set up.
+    PdfDocumentWriter.Letterhead getLetterhead();
 }

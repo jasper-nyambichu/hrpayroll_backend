@@ -31,10 +31,10 @@ public class UserMapper {
                 user.getUsername(),
                 user.getRole().name(),
                 user.getDisplayName(),
+                user.getEmail(),
                 user.getBranchId(),
                 user.getAgentId(),
-                user.isActive(),
-                user.isCanRunPayments()
+                user.isActive()
         );
     }
 }

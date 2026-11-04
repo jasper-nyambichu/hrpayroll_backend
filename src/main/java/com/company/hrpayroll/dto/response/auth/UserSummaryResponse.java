@@ -6,8 +6,8 @@ public record UserSummaryResponse(
         String username,
         String role,
         String displayName,
+        String email,
         Long branchId,
         Long agentId,
-        boolean active,
-        boolean canRunPayments
+        boolean active
 ) {}

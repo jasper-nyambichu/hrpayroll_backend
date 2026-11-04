@@ -7,6 +7,7 @@ import com.company.hrpayroll.dto.request.damage.BiometricConsentRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
 import com.company.hrpayroll.dto.response.attendance.DeviceMappingItemResponse;
+import com.company.hrpayroll.dto.response.attendance.FingerprintSyncResponse;
 import com.company.hrpayroll.dto.response.damage.DamageResponse;
 import com.company.hrpayroll.dto.response.damage.PendingConsentResponse;
 import com.company.hrpayroll.exception.InvalidOperationException;
@@ -51,6 +52,14 @@ public class BiometricSyncController {
     public ApiResponse<List<DeviceMappingItemResponse>> getMappingsForMyBranch(HttpServletRequest httpRequest) {
         String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
         return ApiResponse.success(biometricEnrollmentService.getMappingsForDevice(deviceSerial));
+    }
+
+    // Pulled by a branch PC on startup and periodically: the fingerprints of everyone working at its branch,
+    // so someone moved here is recognised without enrolling again.
+    @GetMapping("/fingerprints")
+    public ApiResponse<FingerprintSyncResponse> getFingerprintsForMyBranch(HttpServletRequest httpRequest) {
+        String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
+        return ApiResponse.success(biometricEnrollmentService.getFingerprintsForDevice(deviceSerial));
     }
 
     // Pulled by the desktop application: damages waiting for a fingerprint from someone enrolled on

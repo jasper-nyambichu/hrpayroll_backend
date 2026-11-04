@@ -91,16 +91,11 @@ public class CompanyServiceImpl implements CompanyService {
     }
 
     @Override
-    public void writeLetterhead(PdfDocumentWriter writer) throws IOException {
-        Company company = companyRepository.findAll().stream().findFirst().orElse(null);
-        if (company == null) {
-            return;
-        }
-        if (company.getLogoData() != null) {
-            writer.logo(company.getLogoData());
-        }
-        writer.subtitle(company.getName());
-        writer.spacer(6f);
+    public PdfDocumentWriter.Letterhead getLetterhead() {
+        return companyRepository.findAll().stream().findFirst()
+                .map(company -> new PdfDocumentWriter.Letterhead(
+                        company.getName(), company.getLogoData(), company.getAddress(), company.getPhone(), company.getEmail()))
+                .orElse(null);
     }
 
     private Company findCompanyOrThrow() {

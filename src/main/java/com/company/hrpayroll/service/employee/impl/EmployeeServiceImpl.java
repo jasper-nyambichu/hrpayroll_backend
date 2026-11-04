@@ -25,6 +25,8 @@ import com.company.hrpayroll.repository.damage.DamageRepository;
 import com.company.hrpayroll.repository.dayswork.DaysWorkedRecordRepository;
 import com.company.hrpayroll.repository.loan.LoanRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
+import com.company.hrpayroll.config.BusinessClock;
+import com.company.hrpayroll.repository.attendance.EmployeeFingerprintRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.service.employee.EmployeeService;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +34,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -43,18 +47,23 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     private static final String DELETED = "DELETED";
 
+    // How long an unclosed clock-in can still be closed by a scan. Same window as the biometric sync.
+    private static final Duration MAX_OPEN_SESSION = Duration.ofHours(20);
+
     private final EmployeeRepository employeeRepository;
     private final BranchRepository branchRepository;
     private final DepartmentRepository departmentRepository;
     private final AgentRepository agentRepository;
     private final EmployeeMapper employeeMapper;
     private final BiometricDeviceMappingRepository biometricDeviceMappingRepository;
+    private final EmployeeFingerprintRepository employeeFingerprintRepository;
     private final LoanRepository loanRepository;
     private final DamageRepository damageRepository;
     private final DaysWorkedRecordRepository daysWorkedRecordRepository;
     private final AttendanceRepository attendanceRepository;
     private final AgentSettlementRepository agentSettlementRepository;
     private final UserRepository userRepository;
+    private final BusinessClock businessClock;
 
     @Override
     public EmployeeResponse createEmployee(EmployeeRequest request) {
@@ -74,6 +83,10 @@ public class EmployeeServiceImpl implements EmployeeService {
     public EmployeeResponse updateEmployee(Long id, EmployeeRequest request) {
         Employee employee = findEmployeeOrThrow(id);
 
+        // A move has its own endpoint, because it also has to tidy up terminals and the login.
+        if (!employee.getBranchId().equals(request.branchId())) {
+            throw new InvalidOperationException("Move an employee to another branch from the Branch card on their record");
+        }
         validateAndFetchBranch(request.branchId());
         validateDepartmentExists(request.departmentId());
         validateAgentExistsIfProvided(request.agentId());
@@ -106,6 +119,14 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     public List<EmployeeSummaryResponse> getEmployeesByDepartment(Long departmentId) {
         return employeeRepository.findByDepartmentId(departmentId).stream()
+                .map(this::toSummaryResponse)
+                .toList();
+    }
+
+    @Override
+    public List<EmployeeSummaryResponse> getEmployeesByDepartmentInBranch(Long departmentId, Long branchId) {
+        return employeeRepository.findByDepartmentId(departmentId).stream()
+                .filter(employee -> employee.getBranchId().equals(branchId))
                 .map(this::toSummaryResponse)
                 .toList();
     }
@@ -160,6 +181,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeRepository.save(employee);
 
         biometricDeviceMappingRepository.deleteByEmployeeId(id);
+        employeeFingerprintRepository.deleteByEmployeeId(id);
         userRepository.findByEmployeeId(id).ifPresent(user -> {
             user.setActive(false);
             userRepository.save(user);
@@ -169,13 +191,45 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeRepository.assignEmployeeNumbersInOrder();
     }
 
+    // Moves the employee and everything that follows them, all or nothing. Past attendance, damages and
+    // locked days keep the branch they happened at, so the old branch's history stays true. Their loans,
+    // agent, payslips and enrolled fingerprints follow them, because those belong to the employee.
     @Override
+    @Transactional
     public EmployeeResponse assignBranch(Long id, Long branchId) {
         Employee employee = findEmployeeOrThrow(id);
-        validateAndFetchBranch(branchId);
+        Branch target = validateAndFetchBranch(branchId);
+
+        if (!"ACTIVE".equals(employee.getEmploymentStatus())) {
+            throw new InvalidOperationException("Only an active employee can be moved to another branch");
+        }
+        if (branchId.equals(employee.getBranchId())) {
+            throw new InvalidOperationException(employee.getFullName() + " already works at " + target.getName());
+        }
+        rejectIfClockedIn(employee);
 
         employee.setBranchId(branchId);
-        return toFullResponse(employeeRepository.save(employee));
+        Employee saved = employeeRepository.save(employee);
+
+        userRepository.findByEmployeeId(id).ifPresent(user -> {
+            user.setBranchId(branchId);
+            userRepository.save(user);
+        });
+
+        return toFullResponse(saved);
+    }
+
+    // Once moved, the old terminal refuses their clock-out, so the open session could never be closed
+    // by a scan and would also block their first clock-in at the new branch that day.
+    private void rejectIfClockedIn(Employee employee) {
+        LocalDateTime now = businessClock.now();
+        attendanceRepository.findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(employee.getId())
+                .filter(open -> open.getClockIn() != null
+                        && Duration.between(open.getClockIn(), now).compareTo(MAX_OPEN_SESSION) <= 0)
+                .ifPresent(open -> {
+                    throw new InvalidOperationException(
+                            employee.getFullName() + " is clocked in right now. Move them after they clock out.");
+                });
     }
 
     // Deleting must never lose money: an unpaid loan, unpaid days or an undeducted damage have to be settled first.

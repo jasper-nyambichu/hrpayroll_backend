@@ -11,6 +11,7 @@ import com.company.hrpayroll.repository.agent.AgentRepository;
 import com.company.hrpayroll.repository.branch.BranchRepository;
 import com.company.hrpayroll.repository.department.DepartmentRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
+import com.company.hrpayroll.service.common.pdf.DateLabel;
 import com.company.hrpayroll.service.common.pdf.PdfDocumentWriter;
 import com.company.hrpayroll.service.company.CompanyService;
 import com.company.hrpayroll.service.employee.EmployeeExportService;
@@ -35,7 +36,7 @@ import static com.company.hrpayroll.service.common.pdf.AmountFormatter.format;
 @RequiredArgsConstructor
 public class EmployeeExportServiceImpl implements EmployeeExportService {
 
-    private static final float[] PDF_COLUMNS = {80f, 130f, 75f, 80f, 80f, 50f};
+    private static final float[] PDF_COLUMNS = {65f, 125f, 75f, 80f, 85f, 65f};
     private static final float[] PDF_COLUMNS_NO_SALARY = {85f, 150f, 80f, 90f, 90f};
 
     private static final Pattern PHONE_NUMBER = Pattern.compile("^\\+?[0-9 ]+$");
@@ -101,13 +102,16 @@ public class EmployeeExportServiceImpl implements EmployeeExportService {
         }
 
         try (PdfDocumentWriter writer = new PdfDocumentWriter()) {
-            companyService.writeLetterhead(writer);
-            writer.title("Employee List");
-            writer.subtitle("Date: " + businessClock.today() + "   Employees: " + employees.size());
-            writer.divider();
+            writer.documentHeader(
+                    "Employee List",
+                    List.of(
+                            new PdfDocumentWriter.Field("Date", DateLabel.format(businessClock.today())),
+                            new PdfDocumentWriter.Field("Employees", String.valueOf(employees.size()))),
+                    companyService.getLetterhead(),
+                    List.of());
 
             if (byBranch.isEmpty()) {
-                writer.subtitle("No employees to list.");
+                writer.note("No employees to list.");
             }
 
             for (Map.Entry<String, List<Employee>> branch : byBranch.entrySet()) {

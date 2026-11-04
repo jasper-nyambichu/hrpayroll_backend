@@ -52,7 +52,9 @@ public class EmployeeCreationRequestController {
     @GetMapping("/mine")
     @PreAuthorize(SUBMITTER_ROLES)
     public ApiResponse<List<EmployeeCreationRequestResponse>> mine() {
-        return ApiResponse.success(requestService.listMine(accessGuard.currentUserId()));
+        return ApiResponse.success(requestService.listMine(accessGuard.currentUserId()).stream()
+                .filter(this::isVisibleToBranchManager)
+                .toList());
     }
 
     // Admin sees any; a submitter only the ones they submitted.
@@ -63,10 +65,16 @@ public class EmployeeCreationRequestController {
 
         boolean isAdmin = auth.getAuthorities().stream().anyMatch(a ->
                 a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SUPER_ADMIN"));
-        if (!isAdmin && !response.requestedByUserId().equals(accessGuard.currentUserId())) {
+        if (!isAdmin && (!response.requestedByUserId().equals(accessGuard.currentUserId())
+                || !isVisibleToBranchManager(response))) {
             throw new AccessDeniedException("Not your request");
         }
         return ApiResponse.success(response);
+    }
+
+    // A Branch Manager who has moved leaves behind what they proposed for their old branch.
+    private boolean isVisibleToBranchManager(EmployeeCreationRequestResponse response) {
+        return !accessGuard.isBranchManager() || accessGuard.isSameBranch(response.branchId());
     }
 
     @PutMapping("/{id}/approve")

@@ -17,4 +17,8 @@ public interface BiometricDeviceMappingRepository extends JpaRepository<Biometri
     List<BiometricDeviceMapping> findByDeviceId(Long deviceId);
 
     void deleteByEmployeeId(Long employeeId);
+
+    List<BiometricDeviceMapping> findByTerminalUserId(String terminalUserId);
+
+    List<BiometricDeviceMapping> findByEmployeeIdIn(List<Long> employeeIds);
 }

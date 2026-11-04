@@ -1,6 +1,7 @@
 // controller/auth/UserController.java
 package com.company.hrpayroll.controller.auth;
 
+import com.company.hrpayroll.audit.AuditDetails;
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
@@ -9,7 +10,9 @@ import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
+import com.company.hrpayroll.service.audit.AuditService;
 import com.company.hrpayroll.service.auth.UserService;
+import com.company.hrpayroll.service.branch.BranchService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,8 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final AuditService auditService;
+    private final BranchService branchService;
 
     // The signed-in account as it stands now, so a screen can tell if the Admin has just changed it.
     @GetMapping("/me")
@@ -90,31 +95,32 @@ public class UserController {
         return ApiResponse.success("Login changed", userService.changeCredentials(userId, request));
     }
 
-    public record RunPaymentsRequest(@NotNull(message = "Choose yes or no") Boolean allowed) {}
-
-    // Lets a Branch Manager run the agent payment calculation while the Admin is away, or takes it back.
-    @PutMapping("/{userId}/run-payments")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    @Auditable(action = "USER_RUN_PAYMENTS_CHANGED", entityType = "User")
-    public ApiResponse<UserSummaryResponse> setRunPayments(
-            @PathVariable Long userId,
-            @Valid @RequestBody RunPaymentsRequest request
-    ) {
-        return ApiResponse.success("Saved", userService.setRunPayments(userId, request.allowed()));
-    }
-
-    // Which branch a Back Office officer works at, which also limits what their dashboard shows.
-    // Branch Managers are not moved here because their branch decides what they can see.
-    public record UserBranchRequest(@NotNull(message = "Branch is required") Long branchId) {}
+    // Which branch a Branch Manager or Back Office login works at, which decides what they can see.
+    public record UserBranchRequest(@NotNull(message = "Branch is required") Long branchId, Boolean swap) {}
 
     @PutMapping("/{userId}/branch")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    @Auditable(action = "USER_BRANCH_ASSIGNED", entityType = "User")
     public ApiResponse<UserSummaryResponse> assignBranch(
             @PathVariable Long userId,
-            @Valid @RequestBody UserBranchRequest request
+            @Valid @RequestBody UserBranchRequest request,
+            @AuthenticationPrincipal User currentUser
     ) {
-        return ApiResponse.success("Branch saved", userService.assignBackOfficeBranch(userId, request.branchId()));
+        Long from = userService.findById(userId).branchId();
+        String fromName = from == null ? null : branchService.getBranchById(from).name();
+        String toName = branchService.getBranchById(request.branchId()).name();
+        UserService.BranchMove move = userService.assignBranch(userId, request.branchId(), Boolean.TRUE.equals(request.swap()));
+
+        // Logged by hand rather than with @Auditable, so the history says where they moved from and to.
+        recordBranchMove(currentUser, userId, fromName, toName);
+        if (move.swappedWith() != null) {
+            recordBranchMove(currentUser, move.swappedWith().id(), toName, fromName);
+        }
+        return ApiResponse.success("Branch saved", move.moved());
+    }
+
+    private void recordBranchMove(User admin, Long userId, String fromBranch, String toBranch) {
+        auditService.record(admin.getId(), "USER_BRANCH_ASSIGNED", "User", userId,
+                AuditDetails.withRequest("fromBranch", fromBranch, "toBranch", toBranch));
     }
 
     @DeleteMapping("/{userId}")

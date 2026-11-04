@@ -37,6 +37,10 @@ public class User extends BaseEntity implements UserDetails {
     @Column(length = 150)
     private String displayName;
 
+    // Where a password reset code is sent. One address means one login.
+    @Column(length = 150)
+    private String email;
+
     // Links this login to a specific Employee or Agent record where relevant.
     // Null for Super Admin / Admin / HR / Payroll / Finance / Auditor.
     private Long employeeId;
@@ -57,12 +61,6 @@ public class User extends BaseEntity implements UserDetails {
     @Builder.Default
     @Column(nullable = false)
     private boolean deleted = false;
-
-    // A Branch Manager the Admin has allowed to run the agent payment calculation. Read on every
-    // request, so taking it back works at once.
-    @Builder.Default
-    @Column(nullable = false)
-    private boolean canRunPayments = false;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
