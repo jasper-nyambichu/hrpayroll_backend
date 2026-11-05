@@ -143,7 +143,15 @@ public class BiometricEnrollmentServiceImpl implements BiometricEnrollmentServic
         linkTerminalId(employee, device, request.terminalUserId());
 
         short slot = request.fingerSlot();
-        EmployeeFingerprint fingerprint = fingerprintRepository.findByEmployeeIdAndFingerSlot(employee.getId(), slot)
+        var existing = fingerprintRepository.findByEmployeeIdAndFingerSlot(employee.getId(), slot);
+
+        // A PC backing up what it held from before a move may fill a gap, but must never replace the
+        // company copy of someone who now works at another branch.
+        if (existing.isPresent() && !employee.getBranchId().equals(device.getBranchId())) {
+            return;
+        }
+
+        EmployeeFingerprint fingerprint = existing
                 .orElseGet(() -> EmployeeFingerprint.builder().employeeId(employee.getId()).fingerSlot(slot).build());
         fingerprint.setTemplateEncrypted(fingerprintCipher.encrypt(template, employee.getId(), slot));
         fingerprint.setQualityScore(request.qualityScore());
@@ -232,11 +240,11 @@ public class BiometricEnrollmentServiceImpl implements BiometricEnrollmentServic
         }
     }
 
-    // A Branch Manager may only enroll on their own branch's device.
+    // A Branch Manager or Back Office login may only enroll on their own branch's device.
     private void enforceBranchScope(BiometricDevice device) {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof User user
-                && user.getRole() == Role.BRANCH_MANAGER
+                && (user.getRole() == Role.BRANCH_MANAGER || user.getRole() == Role.BACK_OFFICE)
                 && (user.getBranchId() == null || !user.getBranchId().equals(device.getBranchId()))) {
             throw new AccessDeniedException("You can only enroll employees on your own branch's device");
         }

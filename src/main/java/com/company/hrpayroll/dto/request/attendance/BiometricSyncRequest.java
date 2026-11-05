@@ -16,6 +16,8 @@ public record BiometricSyncRequest(
         @NotBlank(message = "Device serial is required") String deviceSerial,
         @NotNull(message = "Timestamp is required") LocalDateTime timestamp,
         @NotBlank(message = "Verify method is required") String verifyMethod, // e.g. "FINGERPRINT"
-        @NotBlank(message = "Event type is required") String eventType,        // CLOCK_IN or CLOCK_OUT
-        Instant timestampUtc
+        @NotBlank(message = "Event type is required") String eventType,        // CLOCK_IN, CLOCK_OUT, LUNCH_OUT, EMERGENCY_OUT or BREAK_RETURN
+        Instant timestampUtc,
+        Instant expectedBackAtUtc,                                             // EMERGENCY_OUT: when they said they would return
+        String reason                                                          // EMERGENCY_OUT: why they are leaving
 ) {}

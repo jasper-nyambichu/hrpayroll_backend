@@ -292,17 +292,14 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
 
     // ------------------------------------------------------------------ helpers
 
-    // A Branch Manager only ever sees their own branch, whatever branchId they pass.
+    // A Branch Manager or Back Office login only ever sees its own branch, whatever branchId it passes.
     private Long scopeBranch(Long requested) {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof User user && user.getRole() == Role.BRANCH_MANAGER) {
+        if (auth != null && auth.getPrincipal() instanceof User user
+                && (user.getRole() == Role.BRANCH_MANAGER || user.getRole() == Role.BACK_OFFICE)) {
             if (user.getBranchId() == null) {
                 throw new AccessDeniedException("Your account is not assigned to a branch");
             }
-            return user.getBranchId();
-        }
-        // A Back Office login with a branch works on that branch alone.
-        if (auth != null && auth.getPrincipal() instanceof User user && user.getRole() == Role.BACK_OFFICE && user.getBranchId() != null) {
             return user.getBranchId();
         }
         return requested;
@@ -353,7 +350,8 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
         Integer minutesLate = null;
         if (c.getCheckedInAt() == null) {
             returnStatus = "OUT";
-        } else if (c.getExpectedBackAt() == null) {
+        } else if (c.getExpectedBackAt() == null || !AttendanceCheckout.LUNCH.equals(c.getCheckType())) {
+            // Only a lunch has a limit. A temporary check-out's return time is what they said, never lateness.
             returnStatus = "RETURNED";
         } else if (c.getCheckedInAt().isAfter(c.getExpectedBackAt())) {
             returnStatus = "LATE";

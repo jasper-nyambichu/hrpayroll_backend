@@ -83,10 +83,10 @@ public class EmployeeController {
         return ApiResponse.success(forViewer(employeeService.getEmployeeById(id)));
     }
 
-    // The real branch boundary — a Branch Manager can only list employees for their own branch.
-    // The Auditor and Back Office read any branch's list.
+    // The real branch boundary — a Branch Manager or Back Office login can only list employees for
+    // its own branch. The Auditor reads any branch's list.
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BACK_OFFICE') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getEmployeesByBranch(branchId));
     }
@@ -131,9 +131,9 @@ public class EmployeeController {
         return ApiResponse.success(employeeService.getBranchDirectory(branchId));
     }
 
-    // The same list for a Branch Manager: their own branch, without salary.
+    // The same list for a Branch Manager or Back Office login: their own branch, without salary.
     @GetMapping("/my-branch-directory")
-    @PreAuthorize("hasRole('BRANCH_MANAGER')")
+    @PreAuthorize("hasAnyRole('BRANCH_MANAGER', 'BACK_OFFICE')")
     public ApiResponse<List<EmployeeDirectoryResponse>> getMyBranchEmployees() {
         if (accessGuard.currentBranchId() == null) {
             throw new InvalidOperationException("Your account is not assigned to a branch. Ask an Admin to assign you one.");
@@ -162,8 +162,8 @@ public class EmployeeController {
     @GetMapping("/by-department/{departmentId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'BRANCH_MANAGER', 'AUDITOR', 'BACK_OFFICE')")
     public ApiResponse<List<EmployeeSummaryResponse>> getEmployeesByDepartment(@PathVariable Long departmentId) {
-        // A department spans every branch, but a Branch Manager only ever sees their own branch's staff.
-        if (accessGuard.isBranchManager()) {
+        // A department spans every branch, but a Branch Manager or Back Office login only ever sees its own branch's staff.
+        if (accessGuard.isBranchManager() || accessGuard.isBackOffice()) {
             return ApiResponse.success(
                     employeeService.getEmployeesByDepartmentInBranch(departmentId, accessGuard.currentBranchId()));
         }

@@ -5,6 +5,8 @@ import com.company.hrpayroll.dto.request.shift.ShiftAssignmentRequest;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
+import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
+import com.company.hrpayroll.repository.damage.DamageRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
@@ -20,6 +22,8 @@ import org.springframework.stereotype.Component;
 public class AccessGuard {
 
     private final AttendanceRepository attendanceRepository;
+    private final BiometricDeviceRepository biometricDeviceRepository;
+    private final DamageRepository damageRepository;
     private final EmployeeRepository employeeRepository;
     private final AgentSettlementRepository agentSettlementRepository;
     private final EmployeePayslipRepository employeePayslipRepository;
@@ -60,6 +64,21 @@ public class AccessGuard {
     public boolean isAttendanceInMyBranch(Long attendanceId) {
         return attendanceRepository.findById(attendanceId)
                 .map(attendance -> isSameBranch(attendance.getBranchId()))
+                .orElse(false);
+    }
+
+    // A reader belongs to one branch. Fails closed for an unknown id.
+    public boolean isDeviceInMyBranch(Long deviceId) {
+        return biometricDeviceRepository.findById(deviceId)
+                .map(device -> isSameBranch(device.getBranchId()))
+                .orElse(false);
+    }
+
+    // A damage stays with the branch it was recorded at, and is also open to the branch the employee works at
+    // now, because only that branch's reader can take their consent. Fails closed for an unknown id.
+    public boolean isDamageInMyBranch(Long damageId) {
+        return damageRepository.findById(damageId)
+                .map(damage -> isSameBranch(damage.getBranchId()) || isEmployeeInMyBranch(damage.getEmployeeId()))
                 .orElse(false);
     }
 
@@ -133,6 +152,10 @@ public class AccessGuard {
 
     public boolean isBranchManager() {
         return currentUser().getRole() == Role.BRANCH_MANAGER;
+    }
+
+    public boolean isBackOffice() {
+        return currentUser().getRole() == Role.BACK_OFFICE;
     }
 
     public Long currentBranchId() {

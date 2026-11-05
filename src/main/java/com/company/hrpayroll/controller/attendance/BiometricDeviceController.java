@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-// Registering hardware is for the Admin and the Back Office officer who runs the desktop
-// application — this is the step that mints a device token, which is why it's a JWT-protected
+// Registering hardware is for the Admin and, for their own branch only, the Back Office officer who
+// runs the desktop application — this is the step that mints a device token, which is why it's a JWT-protected
 // endpoint even though the device itself later authenticates differently.
 @RestController
 @RequestMapping("/attendance/devices")
@@ -25,7 +25,7 @@ public class BiometricDeviceController {
     private final BiometricDeviceService biometricDeviceService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasRole('BACK_OFFICE') and @accessGuard.isSameBranch(#request.branchId()))")
     @Auditable(action = "BIOMETRIC_DEVICE_REGISTERED", entityType = "BiometricDevice")
     public ApiResponse<DeviceRegistrationResponse> registerDevice(
             @Valid @RequestBody DeviceRegistrationRequest request
@@ -37,13 +37,13 @@ public class BiometricDeviceController {
     }
 
     @GetMapping("/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<BiometricDeviceResponse>> getDevicesByBranch(@PathVariable Long branchId) {
         return ApiResponse.success(biometricDeviceService.getDevicesByBranch(branchId));
     }
 
     @PutMapping("/{deviceId}/deactivate")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasRole('BACK_OFFICE') and @accessGuard.isDeviceInMyBranch(#deviceId))")
     @Auditable(action = "BIOMETRIC_DEVICE_DEACTIVATED", entityType = "BiometricDevice")
     public ApiResponse<Void> deactivateDevice(@PathVariable Long deviceId) {
         biometricDeviceService.deactivateDevice(deviceId);

@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -178,6 +179,20 @@ public class DamageServiceImpl implements DamageService {
         return damages.stream()
                 .sorted((a, b) -> b.getId().compareTo(a.getId()))
                 .map(this::toResponse)
+                .toList();
+    }
+
+    // What a branch login may see: damages recorded at the branch, and those of whoever works there now.
+    @Override
+    public List<DamageResponse> getDamagesForBranch(String status, Long employeeId, Long branchId) {
+        if (branchId == null) {
+            return List.of();
+        }
+        Set<Long> staff = employeeRepository.findByBranchId(branchId).stream()
+                .map(Employee::getId)
+                .collect(Collectors.toSet());
+        return getDamages(status, employeeId).stream()
+                .filter(damage -> branchId.equals(damage.branchId()) || staff.contains(damage.employeeId()))
                 .toList();
     }
 

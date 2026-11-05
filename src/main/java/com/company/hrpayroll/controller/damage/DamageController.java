@@ -23,17 +23,18 @@ public class DamageController {
     private final DamageService damageService;
     private final AccessGuard accessGuard;
 
-    // Everyone who may READ damages: the Back Office records them, Payroll deducts them, and the
-    // Accounts Office sees what came off a payslip. Admin inherits Super Admin's access.
+    // Everyone who may READ every damage: Payroll deducts them, and the Accounts Office sees what came
+    // off a payslip. Admin inherits Super Admin's access. The Back Office reads its own branch's only.
     private static final String DAMAGE_READ_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')";
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER')";
 
-    // Recording, overriding and cancelling are the Back Office's job (Admin can step in).
-    private static final String DAMAGE_WRITE_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE')";
+    // Recording, overriding and cancelling are the Back Office's job at its own branch (Admin can step in).
+    private static final String DAMAGE_ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
+    private static final String DAMAGE_OF_MY_BRANCH =
+            " or (hasRole('BACK_OFFICE') and @accessGuard.isDamageInMyBranch(#damageId))";
 
     @PostMapping
-    @PreAuthorize(DAMAGE_WRITE_ROLES)
+    @PreAuthorize(DAMAGE_ADMIN_ROLES + " or (hasRole('BACK_OFFICE') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
     @Auditable(action = "DAMAGE_RECORDED", entityType = "Damage")
     public ApiResponse<DamageResponse> recordDamage(@Valid @RequestBody DamageRequest request) {
         return ApiResponse.success("Damage recorded — awaiting the employee's fingerprint",
@@ -43,7 +44,7 @@ public class DamageController {
     // Approve without the employee's fingerprint. The reason is mandatory and permanently flags
     // the record as overridden.
     @PutMapping("/{damageId}/override")
-    @PreAuthorize(DAMAGE_WRITE_ROLES)
+    @PreAuthorize(DAMAGE_ADMIN_ROLES + DAMAGE_OF_MY_BRANCH)
     @Auditable(action = "DAMAGE_OVERRIDDEN", entityType = "Damage")
     public ApiResponse<DamageResponse> overrideConsent(
             @PathVariable Long damageId,
@@ -54,7 +55,7 @@ public class DamageController {
     }
 
     @PutMapping("/{damageId}/cancel")
-    @PreAuthorize(DAMAGE_WRITE_ROLES)
+    @PreAuthorize(DAMAGE_ADMIN_ROLES + DAMAGE_OF_MY_BRANCH)
     @Auditable(action = "DAMAGE_CANCELLED", entityType = "Damage")
     public ApiResponse<DamageResponse> cancelDamage(@PathVariable Long damageId) {
         return ApiResponse.success("Damage cancelled", damageService.cancelDamage(damageId));
@@ -62,16 +63,19 @@ public class DamageController {
 
     // Optional ?status=PENDING_CONSENT|APPROVED|CANCELLED|DEDUCTED and ?employeeId=. Newest first.
     @GetMapping
-    @PreAuthorize(DAMAGE_READ_ROLES)
+    @PreAuthorize(DAMAGE_READ_ROLES + " or hasRole('BACK_OFFICE')")
     public ApiResponse<List<DamageResponse>> getDamages(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long employeeId
     ) {
+        if (accessGuard.isBackOffice()) {
+            return ApiResponse.success(damageService.getDamagesForBranch(status, employeeId, accessGuard.currentBranchId()));
+        }
         return ApiResponse.success(damageService.getDamages(status, employeeId));
     }
 
     @GetMapping("/{damageId}")
-    @PreAuthorize(DAMAGE_READ_ROLES)
+    @PreAuthorize(DAMAGE_READ_ROLES + DAMAGE_OF_MY_BRANCH)
     public ApiResponse<DamageResponse> getDamage(@PathVariable Long damageId) {
         return ApiResponse.success(damageService.getDamageById(damageId));
     }

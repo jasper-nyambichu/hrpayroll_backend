@@ -18,8 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 // Read-only data for the Admin, Branch Manager and Back Office attendance dashboards.
-// A BRANCH_MANAGER, and a BACK_OFFICE login that has a branch, is automatically limited to that
-// branch inside the service.
+// A BRANCH_MANAGER or BACK_OFFICE login is automatically limited to its own branch inside the service.
 @RestController
 @RequestMapping("/attendance/dashboard")
 @RequiredArgsConstructor

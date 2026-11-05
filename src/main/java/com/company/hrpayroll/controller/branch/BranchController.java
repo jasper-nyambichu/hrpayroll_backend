@@ -55,11 +55,17 @@ public class BranchController {
     }
 
     // HR_MANAGER needs this list to choose a branch on the Add Employee form; PAYROLL_OFFICER to
-    // choose the scope of a payroll run; FINANCE_OFFICER and AUDITOR read it; BACK_OFFICE filters
-    // attendance and devices by branch; AGENT chooses where to place the staff they add.
+    // choose the scope of a payroll run; FINANCE_OFFICER and AUDITOR read it; BACK_OFFICE is told
+    // only its own branch; AGENT chooses where to place the staff they add.
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR', 'BACK_OFFICE', 'AGENT')")
     public ApiResponse<List<BranchResponse>> getAllBranches() {
+        if (accessGuard.isBackOffice()) {
+            Long own = accessGuard.currentBranchId();
+            return ApiResponse.success(branchService.getAllBranches().stream()
+                    .filter(branch -> branch.id().equals(own))
+                    .toList());
+        }
         return ApiResponse.success(branchService.getAllBranches());
     }
 

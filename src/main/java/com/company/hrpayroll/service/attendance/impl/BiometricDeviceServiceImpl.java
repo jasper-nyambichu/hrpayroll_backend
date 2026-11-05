@@ -42,10 +42,9 @@ public class BiometricDeviceServiceImpl implements BiometricDeviceService {
             throw new ResourceNotFoundException("Branch not found with id: " + request.branchId());
         }
 
-        boolean serialTaken = biometricDeviceRepository.findByDeviceSerial(request.deviceSerial()).isPresent();
-        if (serialTaken) {
-            throw new InvalidOperationException(
-                    "A device is already registered with serial: " + request.deviceSerial());
+        var existing = biometricDeviceRepository.findByDeviceSerial(request.deviceSerial());
+        if (existing.isPresent()) {
+            return reissueToken(existing.get(), request.branchId());
         }
 
         String plaintextToken = generateToken();
@@ -88,6 +87,23 @@ public class BiometricDeviceServiceImpl implements BiometricDeviceService {
 
         device.setStatus("INACTIVE");
         biometricDeviceRepository.save(device);
+    }
+
+    // The token exists only on the PC, so a reinstall loses it for good. Registering the same reader again
+    // for its own branch issues a new one and the old one stops working. It can't take a reader from another
+    // branch, or undo an Admin's deactivation.
+    private DeviceRegistrationResponse reissueToken(BiometricDevice device, Long branchId) {
+        if (!branchId.equals(device.getBranchId())) {
+            throw new InvalidOperationException("This reader belongs to a different branch. Sign in on your own branch's computer.");
+        }
+        if (!"ACTIVE".equals(device.getStatus())) {
+            throw new InvalidOperationException("This reader has been deactivated. Ask your administrator.");
+        }
+
+        String plaintextToken = generateToken();
+        device.setDeviceTokenHash(passwordEncoder.encode(plaintextToken));
+        biometricDeviceRepository.save(device);
+        return new DeviceRegistrationResponse(device.getId(), device.getDeviceSerial(), plaintextToken);
     }
 
     private String generateToken() {

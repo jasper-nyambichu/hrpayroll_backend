@@ -29,6 +29,8 @@ public interface DamageService {
 
     // Both filters optional. Newest first.
     List<DamageResponse> getDamages(String status, Long employeeId);
+    List<DamageResponse> getDamagesForBranch(String status, Long employeeId, Long branchId);
+
     DamageResponse getDamageById(Long damageId);
 
     // Called by payroll/engine during a run — not exposed via a controller.

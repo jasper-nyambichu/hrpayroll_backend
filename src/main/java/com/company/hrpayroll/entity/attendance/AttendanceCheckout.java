@@ -13,8 +13,8 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-// An employee leaving during the working day and coming back. The Back Office application records
-// these; a day's first clock-in and last clock-out stay on Attendance.
+// An employee leaving during the working day and coming back, recorded by a fingerprint scan at the
+// branch reader. A day's first clock-in and last clock-out stay on Attendance.
 @Entity
 @Table(name = "attendance_checkouts")
 @Getter
@@ -36,10 +36,18 @@ public class AttendanceCheckout extends BaseEntity {
     @Column(nullable = false)
     private LocalDateTime checkedOutAt;
 
-    // Set for a break with a time limit. Coming back after it counts as late.
+    // Lunch: the end of the allowance, and coming back after it counts as late.
+    // Emergency: only the time they said they would return, which is never counted as late.
     private LocalDateTime expectedBackAt;
 
     private LocalDateTime checkedInAt;
 
     private String reason;
+
+    // The scans that made this row, so a retry from a PC's offline queue is not recorded twice.
+    @Column(length = 100)
+    private String eventId;
+
+    @Column(length = 100)
+    private String returnEventId;
 }

@@ -24,12 +24,12 @@ public class DaysWorkedController {
     private final DaysWorkedService daysWorkedService;
     private final AccessGuard accessGuard;
 
-    // The Back Office produces the figures; Payroll reads them. Admin inherits Super Admin's access.
+    // The Back Office produces the figures of its own branch; Payroll reads them. Admin inherits Super Admin's access.
     private static final String DAYS_READ_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE', 'PAYROLL_OFFICER')";
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or (hasRole('BACK_OFFICE') and @accessGuard.isSameBranch(#branchId))";
 
     private static final String DAYS_WRITE_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BACK_OFFICE')";
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasRole('BACK_OFFICE') and @accessGuard.isSameBranch(#request.branchId()))";
 
     // One row per active employee of the branch: locked figure if the period is locked, otherwise live.
     @GetMapping

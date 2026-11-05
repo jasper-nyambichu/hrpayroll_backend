@@ -25,15 +25,15 @@ public class AttendanceController {
     private final AccessGuard accessGuard;
 
     @PostMapping("/clock-in")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BACK_OFFICE') " +
-            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
+            "or (hasAnyRole('BRANCH_MANAGER', 'BACK_OFFICE') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
     public ApiResponse<AttendanceResponse> clockInManually(@Valid @RequestBody AttendanceRequest request) {
         return ApiResponse.success("Clocked in", attendanceService.clockInManually(request));
     }
 
     @PutMapping("/{attendanceId}/clock-out")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BACK_OFFICE') " +
-            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isAttendanceInMyBranch(#attendanceId))")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
+            "or (hasAnyRole('BRANCH_MANAGER', 'BACK_OFFICE') and @accessGuard.isAttendanceInMyBranch(#attendanceId))")
     public ApiResponse<AttendanceResponse> clockOutManually(
             @PathVariable Long attendanceId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime clockOutTime
@@ -42,8 +42,8 @@ public class AttendanceController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BACK_OFFICE') " +
-            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#employeeId)) " +
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') " +
+            "or (hasAnyRole('BRANCH_MANAGER', 'BACK_OFFICE') and @accessGuard.isEmployeeInMyBranch(#employeeId)) " +
             "or @accessGuard.isSameEmployee(#employeeId)")
     public ApiResponse<List<AttendanceResponse>> getAttendanceForEmployee(
             @PathVariable Long employeeId,
@@ -54,7 +54,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BACK_OFFICE') or @accessGuard.isSameBranch(#branchId)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR') or @accessGuard.isSameBranch(#branchId)")
     public ApiResponse<List<AttendanceResponse>> getAttendanceForBranch(
             @PathVariable Long branchId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,

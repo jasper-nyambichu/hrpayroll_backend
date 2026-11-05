@@ -5,12 +5,14 @@ import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.dto.request.attendance.BiometricSyncRequest;
 import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
 import com.company.hrpayroll.entity.attendance.Attendance;
+import com.company.hrpayroll.entity.attendance.AttendanceCheckout;
 import com.company.hrpayroll.entity.attendance.AttendanceSource;
 import com.company.hrpayroll.entity.attendance.BiometricDevice;
 import com.company.hrpayroll.entity.employee.Employee;
 import com.company.hrpayroll.entity.leave.LeaveStatus;
 import com.company.hrpayroll.exception.InvalidOperationException;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
+import com.company.hrpayroll.repository.attendance.AttendanceCheckoutRepository;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
@@ -31,7 +33,13 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     // A clock-out may close a session opened up to this long before it (night shifts, scans just after midnight).
     private static final Duration MAX_OPEN_SESSION = Duration.ofHours(20);
 
+    // Coming back from lunch after this long is recorded as late.
+    private static final Duration LUNCH_ALLOWANCE = Duration.ofMinutes(30);
+
+    private static final int MAX_REASON_LENGTH = 200;
+
     private final AttendanceRepository attendanceRepository;
+    private final AttendanceCheckoutRepository checkoutRepository;
     private final EmployeeRepository employeeRepository;
     private final BiometricDeviceRepository biometricDeviceRepository;
     private final TerminalIdentity terminalIdentity;
@@ -52,6 +60,16 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
             return toResponse(existing.get(), name);
         }
 
+        // The same for a lunch or temporary check-out, and for coming back from one.
+        var existingBreak = checkoutRepository.findByEventId(request.eventId())
+                .or(() -> checkoutRepository.findByReturnEventId(request.eventId()))
+                .flatMap(c -> attendanceRepository.findById(c.getAttendanceId()));
+        if (existingBreak.isPresent()) {
+            String name = employeeRepository.findById(existingBreak.get().getEmployeeId())
+                    .map(Employee::getFullName).orElse(null);
+            return toResponse(existingBreak.get(), name);
+        }
+
         BiometricDevice device = biometricDeviceRepository.findByDeviceSerial(request.deviceSerial()).orElse(null);
         if (device == null) {
             String reason = "Unknown device: " + request.deviceSerial();
@@ -61,7 +79,10 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
 
         boolean clockIn = "CLOCK_IN".equalsIgnoreCase(request.eventType());
         boolean clockOut = "CLOCK_OUT".equalsIgnoreCase(request.eventType());
-        if (!clockIn && !clockOut) {
+        boolean lunchOut = "LUNCH_OUT".equalsIgnoreCase(request.eventType());
+        boolean emergencyOut = "EMERGENCY_OUT".equalsIgnoreCase(request.eventType());
+        boolean breakReturn = "BREAK_RETURN".equalsIgnoreCase(request.eventType());
+        if (!clockIn && !clockOut && !lunchOut && !emergencyOut && !breakReturn) {
             throw rejected(request, null, "Unsupported event type: " + request.eventType());
         }
 
@@ -98,9 +119,15 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
 
         Attendance attendance;
         try {
-            attendance = clockOut
-                    ? handleClockOut(employee, eventTime, request)
-                    : handleClockIn(employee, eventTime, request, device);
+            if (clockOut) {
+                attendance = handleClockOut(employee, eventTime, request);
+            } else if (clockIn) {
+                attendance = handleClockIn(employee, eventTime, request, device);
+            } else if (breakReturn) {
+                attendance = handleBreakReturn(employee, eventTime, request);
+            } else {
+                attendance = handleBreakOut(employee, eventTime, request, lunchOut);
+            }
         } catch (InvalidOperationException ex) {
             failureLogger.log(request, employee.getId(), truncate(ex.getMessage()));
             throw ex;
@@ -138,15 +165,74 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
         return attendanceRepository.save(attendance);
     }
 
-    private Attendance handleClockOut(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request) {
-        Attendance open = attendanceRepository
+    private Attendance handleBreakOut(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request, boolean lunch) {
+        Attendance open = openSession(employee, eventTime, "No open clock-in found for this employee to step out from");
+
+        checkoutRepository.findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(open.getId())
+                .ifPresent(c -> {
+                    throw new InvalidOperationException("Employee is already out and has not scanned back in");
+                });
+
+        LocalDateTime expectedBack;
+        String reason = null;
+        if (lunch) {
+            expectedBack = eventTime.plus(LUNCH_ALLOWANCE);
+        } else {
+            reason = request.reason() == null ? "" : request.reason().trim();
+            if (reason.isEmpty()) {
+                throw new InvalidOperationException("A reason is required for a temporary check-out");
+            }
+            if (reason.length() > MAX_REASON_LENGTH) {
+                reason = reason.substring(0, MAX_REASON_LENGTH);
+            }
+            if (request.expectedBackAtUtc() == null) {
+                throw new InvalidOperationException("A return time is required for a temporary check-out");
+            }
+            expectedBack = businessClock.resolve(null, request.expectedBackAtUtc());
+            if (!expectedBack.isAfter(eventTime) || !expectedBack.toLocalDate().equals(eventTime.toLocalDate())) {
+                throw new InvalidOperationException("The return time must be later the same day");
+            }
+        }
+
+        checkoutRepository.save(AttendanceCheckout.builder()
+                .attendanceId(open.getId())
+                .checkType(lunch ? AttendanceCheckout.LUNCH : AttendanceCheckout.EMERGENCY)
+                .checkedOutAt(eventTime)
+                .expectedBackAt(expectedBack)
+                .reason(reason)
+                .eventId(request.eventId())
+                .build());
+
+        return open;
+    }
+
+    private Attendance handleBreakReturn(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request) {
+        Attendance open = openSession(employee, eventTime, "No open clock-in found for this employee to return to");
+
+        AttendanceCheckout out = checkoutRepository
+                .findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(open.getId())
+                .orElseThrow(() -> new InvalidOperationException("Employee is not out on a break"));
+
+        // Never earlier than when they left (device clock skew).
+        out.setCheckedInAt(eventTime.isBefore(out.getCheckedOutAt()) ? out.getCheckedOutAt() : eventTime);
+        out.setReturnEventId(request.eventId());
+        checkoutRepository.save(out);
+
+        return open;
+    }
+
+    private Attendance openSession(Employee employee, LocalDateTime eventTime, String whenNone) {
+        return attendanceRepository
                 .findFirstByEmployeeIdAndAttendanceDateAndClockOutIsNullOrderByClockInDesc(
                         employee.getId(), eventTime.toLocalDate())
                 .or(() -> attendanceRepository
                         .findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(employee.getId())
                         .filter(a -> isRecentOpenSession(a, eventTime)))
-                .orElseThrow(() -> new InvalidOperationException(
-                        "No open clock-in found for this employee to close"));
+                .orElseThrow(() -> new InvalidOperationException(whenNone));
+    }
+
+    private Attendance handleClockOut(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request) {
+        Attendance open = openSession(employee, eventTime, "No open clock-in found for this employee to close");
 
         // Never record a clock-out earlier than its clock-in (device clock skew).
         LocalDateTime out = open.getClockIn() != null && eventTime.isBefore(open.getClockIn())
