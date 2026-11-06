@@ -1,5 +1,6 @@
 package com.company.hrpayroll.service.auth.impl;
 
+import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.controller.auth.ProfileController.PasswordRequest;
 import com.company.hrpayroll.controller.auth.ProfileController.ProfileRequest;
 import com.company.hrpayroll.controller.auth.ProfileController.ProfileResponse;
@@ -32,6 +33,7 @@ public class ProfileService {
     private final PasswordEncoder passwordEncoder;
     private final LoginAttemptService loginAttempts;
     private final PasswordResetMailer mailer;
+    private final BusinessClock clock;
 
     public ProfileResponse get(Long userId) {
         return toResponse(load(userId));
@@ -67,6 +69,7 @@ public class ProfileService {
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         user.setMustChangePassword(false);
+        user.forgetIssuedPassword(clock.now());
         userRepository.save(user);
 
         if (user.getEmail() != null) {

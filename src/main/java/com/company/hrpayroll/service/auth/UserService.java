@@ -4,6 +4,7 @@ package com.company.hrpayroll.service.auth;
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
 import com.company.hrpayroll.dto.request.auth.CredentialsRequest;
+import com.company.hrpayroll.dto.response.auth.SavedLoginResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
 import com.company.hrpayroll.entity.auth.Role;
 
@@ -23,4 +24,5 @@ public interface UserService {
     UserSummaryResponse createBranchLogin(Long branchId, Role role, CredentialsRequest request);
     UserSummaryResponse createAgentLogin(Long agentId, CredentialsRequest request);
     UserSummaryResponse changeCredentials(Long userId, CredentialsRequest request);
+    SavedLoginResponse savedLogin(Long userId);
 }

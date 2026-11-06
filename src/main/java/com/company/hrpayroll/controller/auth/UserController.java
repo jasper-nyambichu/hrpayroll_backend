@@ -7,6 +7,7 @@ import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
 import com.company.hrpayroll.dto.request.auth.CredentialsRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
+import com.company.hrpayroll.dto.response.auth.SavedLoginResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
@@ -93,6 +94,14 @@ public class UserController {
             @Valid @RequestBody CredentialsRequest request
     ) {
         return ApiResponse.success("Login changed", userService.changeCredentials(userId, request));
+    }
+
+    // The saved username and password of a login the Admin set, to share it again. Every look is audited.
+    @GetMapping("/{userId}/saved-login")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_CREDENTIALS_VIEWED", entityType = "User")
+    public ApiResponse<SavedLoginResponse> savedLogin(@PathVariable Long userId) {
+        return ApiResponse.success(userService.savedLogin(userId));
     }
 
     // Which branch a Branch Manager or Back Office login works at, which decides what they can see.

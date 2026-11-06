@@ -62,6 +62,26 @@ public class User extends BaseEntity implements UserDetails {
     @Column(nullable = false)
     private boolean deleted = false;
 
+    // The password the Admin last set, encrypted with IssuedPasswordCipher, so the Admin can look it up later.
+    // Null once the person changes or resets it themselves.
+    @Column(name = "issued_password_enc")
+    private byte[] issuedPasswordEnc;
+
+    @Column(name = "issued_password_at")
+    private java.time.LocalDateTime issuedPasswordAt;
+
+    @Column(name = "password_changed_by_owner_at")
+    private java.time.LocalDateTime passwordChangedByOwnerAt;
+
+    // The person chose their own password, so the one the Admin set no longer works and is forgotten.
+    public void forgetIssuedPassword(java.time.LocalDateTime now) {
+        if (issuedPasswordEnc != null || issuedPasswordAt != null) {
+            passwordChangedByOwnerAt = now;
+        }
+        issuedPasswordEnc = null;
+        issuedPasswordAt = null;
+    }
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

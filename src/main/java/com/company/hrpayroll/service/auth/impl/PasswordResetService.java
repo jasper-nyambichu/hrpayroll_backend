@@ -145,6 +145,7 @@ public class PasswordResetService {
 
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setMustChangePassword(false);
+        user.forgetIssuedPassword(now);
         userRepository.save(user);
 
         reset.setUsedAt(now);

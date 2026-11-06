@@ -65,6 +65,10 @@ app:
   biometric:
     # Base64 of 32 random bytes. Back it up: losing it means every fingerprint has to be enrolled again.
     template-key: ${BIOMETRIC_TEMPLATE_KEY:}
+  credentials:
+    # Encrypts the passwords the Admin sets, so they can be looked up later. Base64 of 32 random bytes.
+    # Left unset, a key derived from BIOMETRIC_TEMPLATE_KEY is used instead.
+    key: ${CREDENTIAL_KEY:}
   jwt:
     secret: 24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=
     access-token-expiry-ms: 900000

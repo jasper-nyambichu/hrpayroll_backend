@@ -1,9 +1,11 @@
 // service/auth/impl/UserServiceImpl.java
 package com.company.hrpayroll.service.auth.impl;
 
+import com.company.hrpayroll.config.BusinessClock;
 import com.company.hrpayroll.dto.request.auth.ChangePasswordRequest;
 import com.company.hrpayroll.dto.request.auth.CreateUserRequest;
 import com.company.hrpayroll.dto.request.auth.CredentialsRequest;
+import com.company.hrpayroll.dto.response.auth.SavedLoginResponse;
 import com.company.hrpayroll.dto.response.auth.UserSummaryResponse;
 import com.company.hrpayroll.entity.agent.Agent;
 import com.company.hrpayroll.entity.auth.Role;
@@ -46,6 +48,8 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final NotificationService notificationService;
+    private final IssuedPasswordCipher issuedPasswordCipher;
+    private final BusinessClock clock;
 
     @Override
     public UserSummaryResponse createUser(CreateUserRequest request) {
@@ -91,6 +95,7 @@ public class UserServiceImpl implements UserService {
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         user.setMustChangePassword(false);
+        user.forgetIssuedPassword(clock.now());
         userRepository.save(user);
     }
 
@@ -186,6 +191,8 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(newLogin(request, role, branch.getName() + " " + title)
                 .branchId(branchId)
                 .build());
+        rememberIssuedPassword(saved, request.password());
+        saved = userRepository.save(saved);
 
         if (role == Role.BRANCH_MANAGER) {
             branch.setManagerId(saved.getId());
@@ -209,6 +216,8 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(newLogin(request, Role.AGENT, agent.getName())
                 .agentId(agentId)
                 .build());
+        rememberIssuedPassword(saved, request.password());
+        saved = userRepository.save(saved);
         return userMapper.toUserSummaryResponse(saved);
     }
 
@@ -229,11 +238,33 @@ public class UserServiceImpl implements UserService {
         if (request.password() != null) {
             user.setPassword(passwordEncoder.encode(request.password()));
             user.setMustChangePassword(false);
+            rememberIssuedPassword(user, request.password());
         }
         if (request.email() != null) {
             user.setEmail(checkedEmail(request.email(), userId));
         }
         return userMapper.toUserSummaryResponse(userRepository.save(user));
+    }
+
+    // What the Admin needs to share a login again later. A password the person chose themselves is never readable.
+    @Override
+    public SavedLoginResponse savedLogin(Long userId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+        if (!ADMIN_SET_ROLES.contains(user.getRole())) {
+            throw new InvalidOperationException("Only Branch Manager, Back Office and Agent logins are saved here");
+        }
+        String password = user.getIssuedPasswordEnc() == null ? null
+                : issuedPasswordCipher.decrypt(user.getIssuedPasswordEnc(), user.getId());
+        return new SavedLoginResponse(user.getId(), user.getUsername(), user.getEmail(), password,
+                password == null ? null : user.getIssuedPasswordAt(), user.getPasswordChangedByOwnerAt());
+    }
+
+    private void rememberIssuedPassword(User user, String password) {
+        user.setIssuedPasswordEnc(issuedPasswordCipher.encrypt(password, user.getId()));
+        user.setIssuedPasswordAt(clock.now());
+        user.setPasswordChangedByOwnerAt(null);
     }
 
     private User.UserBuilder newLogin(CredentialsRequest request, Role role, String displayName) {
