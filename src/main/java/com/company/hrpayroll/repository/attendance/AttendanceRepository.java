@@ -5,6 +5,7 @@ import com.company.hrpayroll.entity.attendance.Attendance;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,6 +17,11 @@ import java.util.Optional;
 
 @Repository
 public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
+
+    // A moved employee's whole history goes with them (where each scan was taken stays in scanned_branch_id).
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Attendance a set a.branchId = :branchId where a.employeeId = :employeeId and a.branchId <> :branchId")
+    int moveEmployeeHistory(@Param("employeeId") Long employeeId, @Param("branchId") Long branchId);
 
     // ---- idempotency ----
     boolean existsByEventId(String eventId);

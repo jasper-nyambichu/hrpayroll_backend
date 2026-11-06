@@ -126,7 +126,11 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
             LocalDateTime deviceLast = devices.stream().map(BiometricDevice::getLastSyncAt)
                     .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
             int onlineDevices = (int) devices.stream().filter(d -> isOnline(d, now)).count();
-            String deviceStatus = devices.isEmpty() ? "NO_DEVICE" : (onlineDevices > 0 ? "ONLINE" : "OFFLINE");
+            boolean anyScanning = devices.stream().anyMatch(d -> isScanning(d, now));
+            String deviceStatus = devices.isEmpty() ? "NO_DEVICE"
+                    : anyScanning ? "ONLINE"
+                    : onlineDevices > 0 ? "READER_DISCONNECTED"
+                    : "OFFLINE";
 
             summaries.add(new BranchSummary(
                     branch.getId(), branch.getName(), branch.getCode(),
@@ -235,7 +239,8 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
                 .map(d -> new DeviceItem(
                         d.getId(), d.getBranchId(),
                         Optional.ofNullable(branches.get(d.getBranchId())).map(Branch::getName).orElse(null),
-                        d.getDeviceSerial(), d.getStatus(), d.getLastSyncAt(), isOnline(d, now)))
+                        d.getDeviceSerial(), d.getStatus(), d.getLastSyncAt(), isOnline(d, now),
+                        d.getLastSeenAt(), d.getReaderConnected(), d.getReaderChangedAt(), d.getAppVersion(), d.getPendingScans()))
                 .sorted(Comparator.comparing(DeviceItem::branchName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
                 .toList();
     }
@@ -305,10 +310,17 @@ public class AttendanceDashboardServiceImpl implements AttendanceDashboardServic
         return requested;
     }
 
+    // Its PC reported recently (or, for an older app that never reports, a scan arrived recently).
     private static boolean isOnline(BiometricDevice device, LocalDateTime now) {
+        LocalDateTime last = latest(device.getLastSeenAt(), device.getLastSyncAt());
         return "ACTIVE".equals(device.getStatus())
-                && device.getLastSyncAt() != null
-                && Duration.between(device.getLastSyncAt(), now).compareTo(DEVICE_ONLINE_WINDOW) <= 0;
+                && last != null
+                && Duration.between(last, now).compareTo(DEVICE_ONLINE_WINDOW) <= 0;
+    }
+
+    // Online and able to scan: a PC that reports its reader unplugged can't take fingerprints.
+    private static boolean isScanning(BiometricDevice device, LocalDateTime now) {
+        return isOnline(device, now) && !Boolean.FALSE.equals(device.getReaderConnected());
     }
 
     private static int percent(int part, int whole) {

@@ -34,6 +34,7 @@ public class BiometricDeviceServiceImpl implements BiometricDeviceService {
     private final BiometricDeviceRepository biometricDeviceRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
+    private final com.company.hrpayroll.config.BusinessClock businessClock;
 
     @Override
     @Transactional
@@ -86,6 +87,24 @@ public class BiometricDeviceServiceImpl implements BiometricDeviceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
 
         device.setStatus("INACTIVE");
+        biometricDeviceRepository.save(device);
+    }
+
+    // A branch PC's report: whether its reader is plugged in, and how many scans it still holds.
+    @Override
+    @Transactional
+    public void recordHeartbeat(String deviceSerial, com.company.hrpayroll.dto.request.attendance.DeviceHeartbeatRequest request) {
+        BiometricDevice device = biometricDeviceRepository.findByDeviceSerial(deviceSerial)
+                .orElseThrow(() -> new ResourceNotFoundException("Unknown device"));
+        var now = businessClock.now();
+        boolean connected = Boolean.TRUE.equals(request.readerConnected());
+        if (device.getReaderConnected() == null || device.getReaderConnected() != connected) {
+            device.setReaderChangedAt(now);
+        }
+        device.setReaderConnected(connected);
+        device.setLastSeenAt(now);
+        device.setAppVersion(request.appVersion());
+        device.setPendingScans(request.pendingScans());
         biometricDeviceRepository.save(device);
     }
 

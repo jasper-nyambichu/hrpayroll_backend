@@ -90,7 +90,12 @@ public final class AttendanceDashboardDtos {
             String deviceSerial,
             String status,
             LocalDateTime lastSyncAt,
-            boolean online
+            boolean online,
+            LocalDateTime lastSeenAt,       // the PC's last report
+            Boolean readerConnected,        // null: this PC has never reported (older app)
+            LocalDateTime readerChangedAt,
+            String appVersion,
+            Integer pendingScans
     ) {}
 
     public record SyncFailureItem(

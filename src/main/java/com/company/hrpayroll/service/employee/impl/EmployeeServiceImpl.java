@@ -191,9 +191,10 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeRepository.assignEmployeeNumbersInOrder();
     }
 
-    // Moves the employee and everything that follows them, all or nothing. Past attendance, damages and
-    // locked days keep the branch they happened at, so the old branch's history stays true. Their loans,
-    // agent, payslips and enrolled fingerprints follow them, because those belong to the employee.
+    // Moves the employee and everything that follows them, all or nothing. Their attendance history follows
+    // them too, so it shows and keeps counting towards their pay at the branch they work at now (where each
+    // scan was taken stays recorded in attendance.scanned_branch_id). Damages and locked days keep the branch
+    // they happened at. Their loans, agent, payslips and enrolled fingerprints follow them.
     @Override
     @Transactional
     public EmployeeResponse assignBranch(Long id, Long branchId) {
@@ -210,6 +211,7 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         employee.setBranchId(branchId);
         Employee saved = employeeRepository.save(employee);
+        attendanceRepository.moveEmployeeHistory(id, branchId);
 
         userRepository.findByEmployeeId(id).ifPresent(user -> {
             user.setBranchId(branchId);

@@ -236,6 +236,26 @@ class BranchMoveTest {
     }
 
     @Test
+    void movingAnEmployeeTakesTheirAttendanceHistoryWithThem() {
+        employeeAtOldBranch();
+
+        employeeService.assignBranch(5L, NEW_BRANCH);
+
+        verify(attendance).moveEmployeeHistory(5L, NEW_BRANCH);
+    }
+
+    @Test
+    void aRefusedMoveLeavesTheirAttendanceWhereItIs() {
+        employeeAtOldBranch();
+        when(attendance.findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(5L))
+                .thenReturn(Optional.of(openSince(LocalDateTime.of(2026, 11, 4, 9, 0))));
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> employeeService.assignBranch(5L, NEW_BRANCH));
+
+        verify(attendance, never()).moveEmployeeHistory(any(), any());
+    }
+
+    @Test
     void someoneClockedInCannotBeMovedAndNothingChanges() {
         Employee employee = employeeAtOldBranch();
         when(attendance.findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(5L))

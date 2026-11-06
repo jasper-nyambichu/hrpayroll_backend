@@ -11,4 +11,5 @@ public interface BiometricDeviceService {
     DeviceRegistrationResponse registerDevice(DeviceRegistrationRequest request);
     List<BiometricDeviceResponse> getDevicesByBranch(Long branchId);
     void deactivateDevice(Long deviceId);
+    void recordHeartbeat(String deviceSerial, com.company.hrpayroll.dto.request.attendance.DeviceHeartbeatRequest request);
 }

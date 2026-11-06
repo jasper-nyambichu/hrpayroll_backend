@@ -65,7 +65,7 @@ class BackOfficeBranchScopeTest {
 
     private final BranchRepository branches = mock(BranchRepository.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
-    private final BiometricDeviceServiceImpl deviceService = new BiometricDeviceServiceImpl(devices, branches, encoder);
+    private final BiometricDeviceServiceImpl deviceService = new BiometricDeviceServiceImpl(devices, branches, encoder, org.mockito.Mockito.mock(com.company.hrpayroll.config.BusinessClock.class));
 
     private final AccessGuard guard = new AccessGuard(
             mock(AttendanceRepository.class), devices, damages, employees,

@@ -33,6 +33,21 @@ public class BiometricDevice extends BaseEntity {
 
     private LocalDateTime lastSyncAt;
 
+    // The branch PC's last report (every minute, and at once when the reader is plugged in or out).
+    private LocalDateTime lastSeenAt;
+
+    // Whether the fingerprint reader was plugged in at that report. Null until the PC first reports.
+    private Boolean readerConnected;
+
+    // When readerConnected last changed, so the web can say how long a reader has been unplugged.
+    private LocalDateTime readerChangedAt;
+
+    @Column(length = 30)
+    private String appVersion;
+
+    // Scans saved on that PC and not yet received, at that report.
+    private Integer pendingScans;
+
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";

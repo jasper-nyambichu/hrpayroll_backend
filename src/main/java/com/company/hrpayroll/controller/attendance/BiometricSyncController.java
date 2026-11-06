@@ -1,6 +1,8 @@
 // controller/attendance/BiometricSyncController.java
 package com.company.hrpayroll.controller.attendance;
 
+import com.company.hrpayroll.dto.request.attendance.DeviceHeartbeatRequest;
+
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.attendance.BiometricSyncRequest;
 import com.company.hrpayroll.dto.request.damage.BiometricConsentRequest;
@@ -32,6 +34,7 @@ public class BiometricSyncController {
     private final BiometricSyncService biometricSyncService;
     private final BiometricEnrollmentService biometricEnrollmentService;
     private final DamageService damageService;
+    private final com.company.hrpayroll.service.attendance.BiometricDeviceService biometricDeviceService;
 
     @PostMapping("/sync")
     public ApiResponse<AttendanceResponse> syncEvent(
@@ -45,6 +48,14 @@ public class BiometricSyncController {
         }
 
         return ApiResponse.success(biometricSyncService.syncEvent(request));
+    }
+
+    // Sent by a branch PC every minute, and at once when its reader is plugged in or out.
+    @PostMapping("/heartbeat")
+    public ApiResponse<Void> heartbeat(@Valid @RequestBody DeviceHeartbeatRequest request, HttpServletRequest httpRequest) {
+        String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
+        biometricDeviceService.recordHeartbeat(deviceSerial, request);
+        return ApiResponse.success(null);
     }
 
     // Pulled by the kiosk on startup and periodically: terminal user id -> employee (with name).
