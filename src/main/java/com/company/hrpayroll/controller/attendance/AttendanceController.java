@@ -2,8 +2,10 @@
 package com.company.hrpayroll.controller.attendance;
 
 import com.company.hrpayroll.dto.request.attendance.AttendanceRequest;
+import com.company.hrpayroll.dto.request.attendance.ManualCheckInRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.attendance.AttendanceResponse;
+import com.company.hrpayroll.dto.response.attendance.ManualCheckInResult;
 import com.company.hrpayroll.security.AccessGuard;
 import com.company.hrpayroll.service.attendance.AttendanceService;
 import jakarta.validation.Valid;
@@ -24,11 +26,24 @@ public class AttendanceController {
     private final AttendanceService attendanceService;
     private final AccessGuard accessGuard;
 
+    // Checking someone in by hand is the Branch Manager's job, not the Back Office's.
     @PostMapping("/clock-in")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER') " +
-            "or (hasAnyRole('BRANCH_MANAGER', 'BACK_OFFICE') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
+            "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
     public ApiResponse<AttendanceResponse> clockInManually(@Valid @RequestBody AttendanceRequest request) {
         return ApiResponse.success("Clocked in", attendanceService.clockInManually(request));
+    }
+
+    /**
+     * The kiosk's manual list, for when the fingerprint reader fails: a Branch Manager ticks employees of
+     * their own branch and they are checked in at the server's time. Only a Branch Manager may do this.
+     */
+    @PostMapping("/manual-check-in")
+    @PreAuthorize("hasRole('BRANCH_MANAGER')")
+    public ApiResponse<List<ManualCheckInResult>> checkInAtMyBranch(@Valid @RequestBody ManualCheckInRequest request) {
+        List<ManualCheckInResult> results = attendanceService.checkInAtMyBranch(request.employeeIds());
+        long done = results.stream().filter(ManualCheckInResult::checkedIn).count();
+        return ApiResponse.success(done + " of " + results.size() + " checked in", results);
     }
 
     @PutMapping("/{attendanceId}/clock-out")
