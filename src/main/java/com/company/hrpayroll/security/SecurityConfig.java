@@ -55,6 +55,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/attendance/biometric/**").permitAll()
+                        // The organisation name and logo the sign-in pages show (see PublicOrganisationController).
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/public/organisation", "/public/organisation/logo").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated()
                 )

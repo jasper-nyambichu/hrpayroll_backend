@@ -28,6 +28,16 @@ import java.nio.charset.StandardCharsets;
 public class PasswordResetMailer {
 
     private final JavaMailSender mailSender;
+    private final com.company.hrpayroll.repository.company.CompanyRepository companyRepository;
+
+    // The organisation's name from Admin → Settings, so the emails carry the client's name, not the vendor's.
+    private String systemName() {
+        return companyRepository.findAll().stream().findFirst()
+                .map(company -> company.getName())
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .orElse("staff portal");
+    }
 
     @Value("${app.mail.from:no-reply@dhwarsh.local}")
     private String from;
@@ -45,7 +55,7 @@ public class PasswordResetMailer {
         String html = """
                 <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1b1b1f">
                   <h2 style="margin:0 0 12px;color:#0b2a45">Reset your password</h2>
-                  <p style="margin:0 0 16px">Hello %s, we received a request to reset your Dhwarsh HR password.</p>
+                  <p style="margin:0 0 16px">Hello %s, we received a request to reset your %s password.</p>
                   <p style="margin:0 0 20px">
                     <a href="%s" style="display:inline-block;background:#0b2a45;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:8px">Continue to reset</a>
                   </p>
@@ -54,23 +64,23 @@ public class PasswordResetMailer {
                   <p style="margin:0 0 8px;color:#55575c;font-size:13px">It works for %d minutes.</p>
                   <p style="margin:0;color:#55575c;font-size:13px">If you did not ask for this, ignore this email. Your password stays the same. Never share this code with anyone.</p>
                 </div>
-                """.formatted(safeName, safeLink, code, minutesValid);
-        String text = "Hello " + name + ",\n\nUse this code to reset your Dhwarsh HR password: " + code
+                """.formatted(safeName, HtmlUtils.htmlEscape(systemName()), safeLink, code, minutesValid);
+        String text = "Hello " + name + ",\n\nUse this code to reset your " + systemName() + " password: " + code
                 + "\nOr open this link: " + link
                 + "\n\nIt works for " + minutesValid + " minutes. If you did not ask for this, ignore this email.";
 
-        send(to, "Your Dhwarsh HR password reset code: " + code, text, html);
+        send(to, "Your " + systemName() + " password reset code: " + code, text, html);
     }
 
     @Async
     public void sendPasswordChanged(String to, String name) {
-        String text = "Hello " + name + ",\n\nYour Dhwarsh HR password has just been changed.\n"
+        String text = "Hello " + name + ",\n\nYour " + systemName() + " password has just been changed.\n"
                 + "If this was not you, contact your administrator straight away.";
         String html = "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1b1b1f\">"
                 + "<h2 style=\"margin:0 0 12px;color:#0b2a45\">Your password was changed</h2>"
-                + "<p>Hello " + HtmlUtils.htmlEscape(name) + ", your Dhwarsh HR password has just been changed.</p>"
+                + "<p>Hello " + HtmlUtils.htmlEscape(name) + ", your " + HtmlUtils.htmlEscape(systemName()) + " password has just been changed.</p>"
                 + "<p>If this was not you, contact your administrator straight away.</p></div>";
-        send(to, "Your Dhwarsh HR password was changed", text, html);
+        send(to, "Your " + systemName() + " password was changed", text, html);
     }
 
     private void send(String to, String subject, String text, String html) {
