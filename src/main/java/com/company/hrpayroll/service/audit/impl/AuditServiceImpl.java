@@ -107,11 +107,15 @@ public class AuditServiceImpl implements AuditService {
     }
 
     @Override
+    // details_json is a LOB: PostgreSQL only streams it inside a transaction, and derived queries have none.
+    @Transactional(readOnly = true)
     public PageResponse<AuditLogResponse> getLogsForEntity(String entityType, Long entityId, Pageable pageable) {
         return toPageResponse(auditLogRepository.findByEntityTypeAndEntityId(entityType, entityId, pageable));
     }
 
     @Override
+    // details_json is a LOB: PostgreSQL only streams it inside a transaction, and derived queries have none.
+    @Transactional(readOnly = true)
     public PageResponse<AuditLogResponse> getLogsByUser(Long userId, Pageable pageable) {
         return toPageResponse(auditLogRepository.findByPerformedByUserId(userId, pageable));
     }
