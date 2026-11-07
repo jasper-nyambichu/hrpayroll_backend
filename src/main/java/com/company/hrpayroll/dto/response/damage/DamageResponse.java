@@ -24,5 +24,7 @@ public record DamageResponse(
         String overriddenByName,
         LocalDateTime overriddenAt,
         Long payrollRunId,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        // When the agent payment calculation took it off a payslip; payrollRunId is that settlement.
+        LocalDateTime deductedAt
 ) {}

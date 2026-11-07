@@ -19,4 +19,7 @@ public interface AuthService {
     AuthResponse agentLogin(AgentLoginRequest request);
 
     AuthResponse refresh(RefreshTokenRequest request);
+
+    /** Branch PC surface: a Branch Manager or Back Office the PC recognised by fingerprint. Checked by StaffFingerprintService. */
+    AuthResponse fingerprintLogin(com.company.hrpayroll.entity.auth.User user, String deviceSerial);
 }

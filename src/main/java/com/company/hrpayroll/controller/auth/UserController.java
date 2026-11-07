@@ -28,6 +28,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UserController {
 
+    private final com.company.hrpayroll.service.auth.StaffFingerprintService staffFingerprintService;
     private final UserService userService;
     private final AuditService auditService;
     private final BranchService branchService;
@@ -102,6 +103,18 @@ public class UserController {
     @Auditable(action = "USER_CREDENTIALS_VIEWED", entityType = "User")
     public ApiResponse<SavedLoginResponse> savedLogin(@PathVariable Long userId) {
         return ApiResponse.success(userService.savedLogin(userId));
+    }
+
+    // The employee record of the person behind a Branch Manager or Back Office login (null to unlink).
+    // It marks them in the branch PC's lists and lets them sign in there with their fingerprint.
+    public record UserEmployeeRequest(Long employeeId) {}
+
+    @PutMapping("/{userId}/employee")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_EMPLOYEE_LINKED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> linkEmployee(@PathVariable Long userId, @RequestBody UserEmployeeRequest request) {
+        return ApiResponse.success(request.employeeId() == null ? "Employee unlinked" : "Employee linked",
+                staffFingerprintService.linkEmployee(userId, request.employeeId()));
     }
 
     // Which branch a Branch Manager or Back Office login works at, which decides what they can see.

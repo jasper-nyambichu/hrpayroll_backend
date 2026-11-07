@@ -120,7 +120,8 @@ public class BiometricEnrollmentServiceImpl implements BiometricEnrollmentServic
                     e != null ? e.getFullName() : null,
                     e != null ? e.getEmployeeNumber() : null,
                     e != null ? e.getPosition() : null,
-                    branchName);
+                    branchName,
+                    null);
         }).toList();
     }
 

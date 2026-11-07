@@ -13,4 +13,5 @@ public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, Lo
     List<LoanRepayment> findByLoanId(Long loanId);
 
     List<LoanRepayment> findByPayrollRunId(Long payrollRunId);
+    List<LoanRepayment> findByPayrollRunIdIn(List<Long> payrollRunIds);
 }

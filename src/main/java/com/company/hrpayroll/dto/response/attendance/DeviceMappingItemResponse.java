@@ -8,5 +8,12 @@ public record DeviceMappingItemResponse(
         String employeeName,
         String employeeNumber,
         String position,
-        String branchName
-) {}
+        String branchName,
+        // BRANCH_MANAGER or BACK_OFFICE when this employee is also the branch's manager or Back Office
+        // (their login is linked to this employee record); null for everyone else.
+        String staffRole
+) {
+    public DeviceMappingItemResponse withStaffRole(String role) {
+        return new DeviceMappingItemResponse(terminalUserId, employeeId, employeeName, employeeNumber, position, branchName, role);
+    }
+}

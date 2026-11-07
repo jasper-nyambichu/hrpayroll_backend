@@ -46,6 +46,7 @@ public class AuthServiceImpl implements AuthService {
     private static final String SURFACE_STAFF = "staff";
     private static final String SURFACE_EMPLOYEE = "employee";
     private static final String SURFACE_AGENT = "agent";
+    private static final String SURFACE_FINGERPRINT = "fingerprint";
 
     // Every role that signs in on the staff login surface: everyone except AGENT and
     // EMPLOYEE, which have their own dedicated endpoints below and must never authenticate
@@ -166,6 +167,12 @@ public class AuthServiceImpl implements AuthService {
 
     // The attempted identifier is recorded (a username, employee number or agent code);
     // the password / PIN never is. The write is independent of the login's outcome.
+    @Override
+    public AuthResponse fingerprintLogin(User user, String deviceSerial) {
+        auditLogin(user.getId(), ACTION_SUCCESS, SURFACE_FINGERPRINT, user.getUsername(), "device " + deviceSerial);
+        return buildAuthResponse(user);
+    }
+
     private void auditLogin(Long userId, String action, String surface, String identifier, String reason) {
         auditService.record(userId, action, "User", userId,
                 AuditDetails.withRequest("surface", surface, "identifier", identifier, "reason", reason));

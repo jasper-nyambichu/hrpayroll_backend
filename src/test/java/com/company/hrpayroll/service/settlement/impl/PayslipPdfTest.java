@@ -29,7 +29,9 @@ class PayslipPdfTest {
                 1L, 1L, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30), 1L, "EMP-0009", name, "Kisii Matt Main Branch", "Test Agent Ltd",
                 26, new BigDecimal("1000.00"), new BigDecimal("26000.00"), new BigDecimal("1200.00"), new BigDecimal("1560.00"),
                 new BigDecimal("150.00"), new BigDecimal("2000.00"), new BigDecimal("500.00"), new BigDecimal("26410.00"),
-                new BigDecimal("10000.00"), new BigDecimal("16410.00"), payments);
+                new BigDecimal("10000.00"), new BigDecimal("16410.00"), payments,
+                List.of(new PayslipResponse.DeductionItem(3L, "Loan #3 instalment", null, new BigDecimal("2000.00"))),
+                List.of(new PayslipResponse.DeductionItem(7L, "Damage: Broken display unit", LocalDate.of(2026, 11, 12), new BigDecimal("500.00"))));
     }
 
     private static byte[] logo(int width, int height) throws IOException {
@@ -71,7 +73,7 @@ class PayslipPdfTest {
                 new PdfDocumentWriter.Letterhead("Dhwarsh Ltd", logo(400, 160), "Kisii", "+254 700 000000", "hr@example.com"));
 
         assertThat(text(pdf))
-                .contains("PAYSLIP", "01 Nov 2026 to 30 Nov 2026", "02 Dec 2026", "QAB123", "Asha Wanjiru", "Dhwarsh Ltd", "KES 26,410.00")
+                .contains("PAYSLIP", "01 Nov 2026 to 30 Nov 2026", "02 Dec 2026", "QAB123", "Loan #3 instalment", "Damage: Broken display unit (12 Nov 2026)", "Asha Wanjiru", "Dhwarsh Ltd", "KES 26,410.00")
                 .doesNotContain("2026-11-01");
         assertThat(pages(pdf)).isEqualTo(1);
     }

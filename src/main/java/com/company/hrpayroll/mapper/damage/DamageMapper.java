@@ -47,7 +47,8 @@ public class DamageMapper {
                 overriddenByName,
                 damage.getOverriddenAt(),
                 damage.getPayrollRunId(),
-                damage.getCreatedAt()
+                damage.getCreatedAt(),
+                damage.getDeductedAt()
         );
     }
 }

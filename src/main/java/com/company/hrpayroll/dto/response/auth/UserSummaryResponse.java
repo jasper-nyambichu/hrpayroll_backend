@@ -9,5 +9,7 @@ public record UserSummaryResponse(
         String email,
         Long branchId,
         Long agentId,
-        boolean active
+        boolean active,
+        // The employee record of the person behind a Branch Manager or Back Office login, if linked.
+        Long employeeId
 ) {}

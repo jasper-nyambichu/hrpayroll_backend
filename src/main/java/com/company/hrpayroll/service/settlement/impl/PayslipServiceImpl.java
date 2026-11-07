@@ -5,13 +5,19 @@ import com.company.hrpayroll.dto.response.common.GeneratedDocument;
 import com.company.hrpayroll.dto.response.settlement.PayslipResponse;
 import com.company.hrpayroll.entity.agent.Agent;
 import com.company.hrpayroll.entity.branch.Branch;
+import com.company.hrpayroll.entity.damage.Damage;
 import com.company.hrpayroll.entity.employee.Employee;
+import com.company.hrpayroll.entity.loan.Loan;
+import com.company.hrpayroll.entity.loan.LoanRepayment;
 import com.company.hrpayroll.entity.payment.EmployeePayment;
 import com.company.hrpayroll.entity.settlement.AgentSettlement;
 import com.company.hrpayroll.entity.settlement.EmployeePayslip;
 import com.company.hrpayroll.exception.ResourceNotFoundException;
 import com.company.hrpayroll.repository.agent.AgentRepository;
 import com.company.hrpayroll.repository.branch.BranchRepository;
+import com.company.hrpayroll.repository.damage.DamageRepository;
+import com.company.hrpayroll.repository.loan.LoanRepaymentRepository;
+import com.company.hrpayroll.repository.loan.LoanRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.payment.EmployeePaymentRepository;
 import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
@@ -47,6 +53,9 @@ public class PayslipServiceImpl implements PayslipService {
     private final EmployeePaymentRepository paymentRepository;
     private final BranchRepository branchRepository;
     private final AgentRepository agentRepository;
+    private final LoanRepaymentRepository loanRepaymentRepository;
+    private final LoanRepository loanRepository;
+    private final DamageRepository damageRepository;
     private final CompanyService companyService;
 
     @Override
@@ -115,9 +124,24 @@ public class PayslipServiceImpl implements PayslipService {
         writer.moneyRow(4, "NITA", format(payslip.nita()));
         writer.moneyTotal("Total Income", "KES " + format(payslip.pay().add(payslip.paye()).add(payslip.nssf()).add(payslip.nita())));
 
+        // Each loan instalment and damage on its own line, so the employee can see what was taken and why.
         writer.sectionTitle("Deduction Details");
-        writer.moneyRow(1, "Loans", format(payslip.loan()));
-        writer.moneyRow(2, "Damages", format(payslip.damage()));
+        int row = 1;
+        if (payslip.loanItems().isEmpty()) {
+            writer.moneyRow(row++, "Loans", format(payslip.loan()));
+        } else {
+            for (PayslipResponse.DeductionItem item : payslip.loanItems()) {
+                writer.moneyRow(row++, item.label(), format(item.amount()));
+            }
+        }
+        if (payslip.damageItems().isEmpty()) {
+            writer.moneyRow(row, "Damages", format(payslip.damage()));
+        } else {
+            for (PayslipResponse.DeductionItem item : payslip.damageItems()) {
+                String when = item.date() != null ? " (" + DateLabel.format(item.date()) + ")" : "";
+                writer.moneyRow(row++, item.label() + when, format(item.amount()));
+            }
+        }
         writer.moneyTotal("Total Deductions", "KES " + format(payslip.loan().add(payslip.damage())));
 
         writer.netBar("Amount Paid to the Agent", "KES " + format(payslip.amountDue()));
@@ -165,13 +189,39 @@ public class PayslipServiceImpl implements PayslipService {
         Map<Long, List<EmployeePayment>> paymentsByRequest = paymentRepository.findByPaymentRequestIdIn(requestIds).stream()
                 .collect(Collectors.groupingBy(EmployeePayment::getPaymentRequestId));
 
+        // What each run deducted, keyed by settlement and employee, so every payslip lists its own items.
+        List<Long> settlementIds = List.copyOf(settlements.keySet());
+        List<LoanRepayment> repayments = loanRepaymentRepository.findByPayrollRunIdIn(settlementIds);
+        Map<Long, Loan> loans = byId(
+                loanRepository.findAllById(repayments.stream().map(LoanRepayment::getLoanId).distinct().toList()), Loan::getId);
+        Map<String, List<PayslipResponse.DeductionItem>> loanItems = repayments.stream()
+                .filter(repayment -> loans.containsKey(repayment.getLoanId()))
+                .collect(Collectors.groupingBy(
+                        repayment -> key(repayment.getPayrollRunId(), loans.get(repayment.getLoanId()).getEmployeeId()),
+                        Collectors.mapping(repayment -> new PayslipResponse.DeductionItem(
+                                repayment.getLoanId(),
+                                "Loan #" + repayment.getLoanId() + " instalment",
+                                null,
+                                repayment.getAmountPaid()), Collectors.toList())));
+        Map<String, List<PayslipResponse.DeductionItem>> damageItems = damageRepository.findByPayrollRunIdIn(settlementIds).stream()
+                .sorted(Comparator.comparing(Damage::getDamageDate, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.groupingBy(
+                        damage -> key(damage.getPayrollRunId(), damage.getEmployeeId()),
+                        Collectors.mapping(damage -> new PayslipResponse.DeductionItem(
+                                damage.getId(),
+                                "Damage: " + damage.getDescription(),
+                                damage.getDamageDate(),
+                                damage.getAmount()), Collectors.toList())));
+
         return payslips.stream()
                 .map(payslip -> {
                     AgentSettlement settlement = settlements.get(payslip.getSettlementId());
                     List<EmployeePayment> payments = paymentsByRequest.getOrDefault(settlement.getPaymentRequestId(), List.of()).stream()
                             .filter(payment -> payment.getEmployeeId().equals(payslip.getEmployeeId()))
                             .toList();
-                    return toResponse(payslip, settlement, employees.get(payslip.getEmployeeId()), branches, agents, payments);
+                    String key = key(payslip.getSettlementId(), payslip.getEmployeeId());
+                    return toResponse(payslip, settlement, employees.get(payslip.getEmployeeId()), branches, agents, payments,
+                            loanItems.getOrDefault(key, List.of()), damageItems.getOrDefault(key, List.of()));
                 })
                 .sorted(Comparator.comparing(PayslipResponse::periodEnd).reversed()
                         .thenComparing(PayslipResponse::employeeName, String.CASE_INSENSITIVE_ORDER))
@@ -184,7 +234,9 @@ public class PayslipServiceImpl implements PayslipService {
             Employee employee,
             Map<Long, String> branches,
             Map<Long, String> agents,
-            List<EmployeePayment> payments
+            List<EmployeePayment> payments,
+            List<PayslipResponse.DeductionItem> loanItems,
+            List<PayslipResponse.DeductionItem> damageItems
     ) {
         BigDecimal recorded = payments.stream().map(EmployeePayment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -211,8 +263,14 @@ public class PayslipServiceImpl implements PayslipService {
                 payslip.getAmountDue().subtract(recorded).max(BigDecimal.ZERO),
                 payments.stream()
                         .map(payment -> new PayslipResponse.RecordedPayment(payment.getMpesaCode(), payment.getAmount(), payment.getPaidOn()))
-                        .toList()
+                        .toList(),
+                loanItems,
+                damageItems
         );
+    }
+
+    private static String key(Long settlementId, Long employeeId) {
+        return settlementId + ":" + employeeId;
     }
 
     private static <T> Map<Long, T> byId(List<T> rows, Function<T, Long> id) {

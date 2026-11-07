@@ -1,7 +1,6 @@
 package com.company.hrpayroll.service;
 
 import com.company.hrpayroll.config.BusinessClock;
-import com.company.hrpayroll.dto.request.dayswork.DaysWorkedLockRequest;
 import com.company.hrpayroll.entity.attendance.Attendance;
 import com.company.hrpayroll.entity.auth.Role;
 import com.company.hrpayroll.entity.auth.User;
@@ -30,12 +29,12 @@ import com.company.hrpayroll.service.dayswork.impl.DaysWorkedServiceImpl;
 import com.company.hrpayroll.service.employee.impl.EmployeeServiceImpl;
 import com.company.hrpayroll.service.notification.NotificationService;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -296,40 +295,23 @@ class BranchMoveTest {
     private static final LocalDate END = LocalDate.of(2026, 10, 31);
 
     private final DaysWorkedServiceImpl daysWorkedService = new DaysWorkedServiceImpl(
-            daysWorked, attendance, employees, mock(AgentSettlementRepository.class), mock(DaysWorkedMapper.class), clock);
+            daysWorked, attendance, employees, mock(DaysWorkedMapper.class));
 
-    private static DaysWorkedRecord lockedAt(Long employeeId, Long branchId, LocalDate start, LocalDate end) {
-        return DaysWorkedRecord.builder().employeeId(employeeId).branchId(branchId).periodStart(start).periodEnd(end).build();
+    private static DaysWorkedRecord lockedAt(Long employeeId, Long branchId, LocalDate start, LocalDate end, int days) {
+        return DaysWorkedRecord.builder().employeeId(employeeId).branchId(branchId).periodStart(start).periodEnd(end).daysWorked(days).build();
     }
 
-    @SuppressWarnings("unchecked")
+    // Locking was removed: payment reads attendance directly, every employee gets a figure (0 if none),
+    // and a period locked before the change keeps its figure, whichever branch locked it.
     @Test
-    void someoneLockedAtTheirOldBranchDoesNotStopTheNewBranchLocking() {
-        when(employees.findByBranchId(NEW_BRANCH)).thenReturn(List.of(employee(5L, NEW_BRANCH), employee(6L, NEW_BRANCH)));
-        when(daysWorked.findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(anyList(), eq(END), eq(START)))
-                .thenReturn(List.of(lockedAt(5L, OLD_BRANCH, START, END)));
+    void paymentDaysNeedNoLockAndKeepAnOldLockedFigure() {
         when(attendance.findByEmployeeIdInAndAttendanceDateBetween(anyList(), eq(START), eq(END))).thenReturn(List.of());
-        when(clock.now()).thenReturn(LocalDateTime.of(2026, 11, 4, 12, 0));
-        when(daysWorked.saveAll(anyList())).thenAnswer(call -> call.getArgument(0));
+        when(daysWorked.findByEmployeeIdInAndPeriodStartAndPeriodEnd(anyList(), eq(START), eq(END)))
+                .thenReturn(List.of(lockedAt(5L, OLD_BRANCH, START, END, 12)));
 
-        daysWorkedService.lockPeriod(new DaysWorkedLockRequest(NEW_BRANCH, START, END, null), 1L);
+        Map<Long, Integer> days = daysWorkedService.getDaysForPayment(List.of(5L, 6L), START, END);
 
-        ArgumentCaptor<List<DaysWorkedRecord>> saved = ArgumentCaptor.forClass(List.class);
-        verify(daysWorked).saveAll(saved.capture());
-        assertEquals(List.of(6L), saved.getValue().stream().map(DaysWorkedRecord::getEmployeeId).toList());
-    }
-
-    @Test
-    void aPeriodLockedAtThisBranchOrPartlyLockedElsewhereIsStillRefused() {
-        when(employees.findByBranchId(NEW_BRANCH)).thenReturn(List.of(employee(5L, NEW_BRANCH)));
-        DaysWorkedLockRequest request = new DaysWorkedLockRequest(NEW_BRANCH, START, END, null);
-
-        when(daysWorked.findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(anyList(), eq(END), eq(START)))
-                .thenReturn(List.of(lockedAt(5L, NEW_BRANCH, START, END)));
-        assertThrows(InvalidOperationException.class, () -> daysWorkedService.lockPeriod(request, 1L));
-
-        when(daysWorked.findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(anyList(), eq(END), eq(START)))
-                .thenReturn(List.of(lockedAt(5L, OLD_BRANCH, START, START.plusDays(14))));
-        assertThrows(InvalidOperationException.class, () -> daysWorkedService.lockPeriod(request, 1L));
+        assertEquals(12, days.get(5L));
+        assertEquals(0, days.get(6L));
     }
 }

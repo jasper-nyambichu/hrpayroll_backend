@@ -95,7 +95,8 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         rejectAlreadyPaid(employeesByAgent.keySet(), start, end);
 
         List<Employee> employees = employeesByAgent.values().stream().flatMap(List::stream).toList();
-        Map<Long, Integer> lockedDays = requireLockedDays(employees, start, end);
+        Map<Long, Integer> daysWorked = daysWorkedService.getDaysForPayment(
+                employees.stream().map(Employee::getId).toList(), start, end);
 
         CompanySettings settings = companySettingsRepository.findAll().stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Company settings have not been configured yet"));
@@ -103,7 +104,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         List<AgentSettlementResponse> results = new ArrayList<>();
         for (Map.Entry<Long, List<Employee>> entry : employeesByAgent.entrySet()) {
             Agent agent = findAgentOrThrow(entry.getKey());
-            AgentSettlement saved = settleAgent(agent, entry.getValue(), lockedDays, settings, start, end, adminUserId);
+            AgentSettlement saved = settleAgent(agent, entry.getValue(), daysWorked, settings, start, end, adminUserId);
             results.add(mapper.toResponse(saved, agent.getName()));
         }
         return results;
@@ -112,7 +113,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
     private AgentSettlement settleAgent(
             Agent agent,
             List<Employee> employees,
-            Map<Long, Integer> lockedDays,
+            Map<Long, Integer> daysWorked,
             CompanySettings settings,
             LocalDate start,
             LocalDate end,
@@ -121,7 +122,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         List<AgentSettlementCalculator.EmployeeLine> lines = employees.stream()
                 .map(employee -> calculator.calculateEmployee(
                         settings,
-                        lockedDays.get(employee.getId()),
+                        daysWorked.getOrDefault(employee.getId(), 0),
                         loanService.getActiveDeductionsForEmployees(List.of(employee.getId())),
                         damageService.getApprovedDeductionsForEmployees(List.of(employee.getId()))))
                 .toList();
@@ -208,9 +209,8 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
 
         Map<Long, List<Employee>> employeesByAgent = resolveEmployees(null);
         List<Employee> employees = employeesByAgent.values().stream().flatMap(List::stream).toList();
-        Set<Long> locked = employees.isEmpty()
-                ? Set.of()
-                : daysWorkedService.getLockedDays(employees.stream().map(Employee::getId).toList(), start, end).keySet();
+        Map<Long, Integer> days = daysWorkedService.getDaysForPayment(
+                employees.stream().map(Employee::getId).toList(), start, end);
 
         Map<Long, String> branchNames = branchRepository.findAll().stream()
                 .collect(Collectors.toMap(Branch::getId, Branch::getName));
@@ -221,7 +221,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
                         entry.getKey(),
                         branchNames.getOrDefault(entry.getKey(), "Branch #" + entry.getKey()),
                         entry.getValue().size(),
-                        (int) entry.getValue().stream().filter(employee -> locked.contains(employee.getId())).count()))
+                        entry.getValue().stream().mapToInt(employee -> days.getOrDefault(employee.getId(), 0)).sum()))
                 .sorted(Comparator.comparing(AgentPaymentReadinessResponse.BranchReadiness::branchName))
                 .toList();
 
@@ -233,9 +233,7 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
                         .sorted()
                         .toList();
 
-        boolean ready = !employees.isEmpty()
-                && alreadyPaid.isEmpty()
-                && branches.stream().allMatch(branch -> branch.lockedCount() == branch.employeeCount());
+        boolean ready = !employees.isEmpty() && alreadyPaid.isEmpty();
 
         return new AgentPaymentReadinessResponse(start, end, ready, branches, alreadyPaid);
     }
@@ -372,29 +370,6 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
         throw new InvalidOperationException(
                 alreadyPaid.size() + " agent(s) have already been paid for part of " + DateLabel.range(start, end)
                         + " (" + names + "). Choose a different period.");
-    }
-
-    // Every employee needs a locked days-worked figure for exactly this period.
-    private Map<Long, Integer> requireLockedDays(List<Employee> employees, LocalDate start, LocalDate end) {
-        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
-        Map<Long, Integer> locked = daysWorkedService.getLockedDays(employeeIds, start, end);
-
-        List<Employee> missing = employees.stream()
-                .filter(employee -> !locked.containsKey(employee.getId()))
-                .toList();
-        if (missing.isEmpty()) {
-            return locked;
-        }
-
-        String examples = missing.stream()
-                .limit(3)
-                .map(Employee::getEmployeeNumber)
-                .collect(Collectors.joining(", "));
-
-        throw new InvalidOperationException(
-                missing.size() + " employee(s) have no locked days worked for " + DateLabel.range(start, end)
-                        + " (e.g. " + examples + "). The Back Office or an Admin must lock the days for those branches "
-                        + "for exactly this period first, under Days Worked.");
     }
 
     private AgentSettlement findOrThrow(Long id) {

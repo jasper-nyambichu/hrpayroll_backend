@@ -35,6 +35,12 @@ public class BiometricSyncController {
     private final BiometricEnrollmentService biometricEnrollmentService;
     private final DamageService damageService;
     private final com.company.hrpayroll.service.attendance.BiometricDeviceService biometricDeviceService;
+    private final com.company.hrpayroll.service.auth.StaffFingerprintService staffFingerprintService;
+
+    // The finger the branch PC recognised (its terminal user id) and which login to open with it.
+    public record StaffFingerprintLoginRequest(
+            @jakarta.validation.constraints.NotBlank String terminalUserId,
+            @jakarta.validation.constraints.NotBlank String role) {}
 
     @PostMapping("/sync")
     public ApiResponse<AttendanceResponse> syncEvent(
@@ -62,7 +68,25 @@ public class BiometricSyncController {
     @GetMapping("/mappings")
     public ApiResponse<List<DeviceMappingItemResponse>> getMappingsForMyBranch(HttpServletRequest httpRequest) {
         String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
-        return ApiResponse.success(biometricEnrollmentService.getMappingsForDevice(deviceSerial));
+        java.util.Map<Long, String> staffRoles = staffFingerprintService.staffRolesForDevice(deviceSerial);
+        return ApiResponse.success(biometricEnrollmentService.getMappingsForDevice(deviceSerial).stream()
+                .map(item -> item.withStaffRole(staffRoles.get(item.employeeId())))
+                .toList());
+    }
+
+    // A Branch Manager or Back Office signs in on the branch PC with their fingerprint. The PC matched the
+    // finger; this checks that it belongs to a login of this PC's branch linked to that employee. Audited
+    // as LOGIN_SUCCESS with surface "fingerprint".
+    @PostMapping("/staff-login")
+    public ApiResponse<com.company.hrpayroll.dto.response.auth.AuthResponse> staffFingerprintLogin(
+            @Valid @RequestBody StaffFingerprintLoginRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
+        if (deviceSerial == null) {
+            throw new InvalidOperationException("This PC's reader is not activated");
+        }
+        return ApiResponse.success(staffFingerprintService.signIn(deviceSerial, request.terminalUserId(), request.role()));
     }
 
     // Pulled by a branch PC on startup and periodically: the fingerprints of everyone working at its branch,

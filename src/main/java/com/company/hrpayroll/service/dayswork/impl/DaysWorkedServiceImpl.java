@@ -1,9 +1,6 @@
 // service/dayswork/impl/DaysWorkedServiceImpl.java
 package com.company.hrpayroll.service.dayswork.impl;
 
-import com.company.hrpayroll.config.BusinessClock;
-import com.company.hrpayroll.dto.request.dayswork.DaysWorkedAdjustmentRequest;
-import com.company.hrpayroll.dto.request.dayswork.DaysWorkedLockRequest;
 import com.company.hrpayroll.dto.response.dayswork.DaysWorkedResponse;
 import com.company.hrpayroll.entity.attendance.Attendance;
 import com.company.hrpayroll.entity.dayswork.DaysWorkedRecord;
@@ -13,11 +10,9 @@ import com.company.hrpayroll.mapper.dayswork.DaysWorkedMapper;
 import com.company.hrpayroll.repository.attendance.AttendanceRepository;
 import com.company.hrpayroll.repository.dayswork.DaysWorkedRecordRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
-import com.company.hrpayroll.repository.settlement.AgentSettlementRepository;
 import com.company.hrpayroll.service.dayswork.DaysWorkedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -41,9 +36,7 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
     private final DaysWorkedRecordRepository daysWorkedRecordRepository;
     private final AttendanceRepository attendanceRepository;
     private final EmployeeRepository employeeRepository;
-    private final AgentSettlementRepository agentSettlementRepository;
     private final DaysWorkedMapper daysWorkedMapper;
-    private final BusinessClock businessClock;
 
     @Override
     public List<DaysWorkedResponse> getForPeriod(Long branchId, LocalDate periodStart, LocalDate periodEnd) {
@@ -54,7 +47,7 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
             return List.of();
         }
 
-        // By employee, not branch: someone moved here after their old branch locked the period is still locked.
+        // A figure locked before locking was removed still stands for its exact period.
         Map<Long, DaysWorkedRecord> locked = daysWorkedRecordRepository
                 .findByEmployeeIdInAndPeriodStartAndPeriodEnd(employees.stream().map(Employee::getId).toList(), periodStart, periodEnd).stream()
                 .collect(Collectors.toMap(DaysWorkedRecord::getEmployeeId, Function.identity(), (a, b) -> a));
@@ -74,125 +67,16 @@ public class DaysWorkedServiceImpl implements DaysWorkedService {
     }
 
     @Override
-    @Transactional
-    public List<DaysWorkedResponse> lockPeriod(DaysWorkedLockRequest request, Long lockedByUserId) {
-        LocalDate start = request.periodStart();
-        LocalDate end = request.periodEnd();
-        validatePeriod(start, end);
-
-        List<Employee> branchEmployees = activeEmployeesOfBranch(request.branchId());
-        if (branchEmployees.isEmpty()) {
-            throw new InvalidOperationException("This branch has no active employees to lock days for");
-        }
-        List<Long> branchIds = branchEmployees.stream().map(Employee::getId).toList();
-
-        // A day must never be counted in two periods, nor a period locked twice. The one exception is
-        // someone moved here after their old branch locked this same period: their figure stands, and
-        // they must not stop the rest of this branch from locking.
-        Set<Long> alreadyLockedElsewhere = new HashSet<>();
-        for (DaysWorkedRecord overlap : daysWorkedRecordRepository
-                .findByEmployeeIdInAndPeriodStartLessThanEqualAndPeriodEndGreaterThanEqual(branchIds, end, start)) {
-            boolean samePeriodAtOldBranch = !request.branchId().equals(overlap.getBranchId())
-                    && start.equals(overlap.getPeriodStart())
-                    && end.equals(overlap.getPeriodEnd());
-            if (!samePeriodAtOldBranch) {
-                throw new InvalidOperationException(
-                        "Days are already locked for part of this period. Unlock them first to lock again.");
-            }
-            alreadyLockedElsewhere.add(overlap.getEmployeeId());
-        }
-
-        List<Employee> employees = branchEmployees.stream()
-                .filter(employee -> !alreadyLockedElsewhere.contains(employee.getId()))
-                .toList();
-        if (employees.isEmpty()) {
-            throw new InvalidOperationException(
-                    "Days are already locked for part of this period. Unlock them first to lock again.");
-        }
-        List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
-
-        long periodLength = ChronoUnit.DAYS.between(start, end) + 1;
-        Map<Long, DaysWorkedAdjustmentRequest> adjustments = new HashMap<>();
-        Set<Long> branchEmployeeIds = new HashSet<>(branchIds);
-        if (request.adjustments() != null) {
-            for (DaysWorkedAdjustmentRequest adjustment : request.adjustments()) {
-                if (!branchEmployeeIds.contains(adjustment.employeeId())) {
-                    throw new InvalidOperationException(
-                            "Employee " + adjustment.employeeId() + " is not an active employee of this branch");
-                }
-                if (adjustment.daysWorked() > periodLength) {
-                    throw new InvalidOperationException(
-                            "Days worked cannot exceed the " + periodLength + " days in the period");
-                }
-                adjustments.put(adjustment.employeeId(), adjustment);
-            }
-        }
-
-        Map<Long, Integer> systemDays = countSystemDays(employeeIds, start, end);
-        var lockedAt = businessClock.now();
-
-        List<DaysWorkedRecord> records = employees.stream()
-                .map(employee -> {
-                    int fromAttendance = systemDays.getOrDefault(employee.getId(), 0);
-                    DaysWorkedAdjustmentRequest adjustment = adjustments.get(employee.getId());
-                    boolean adjusted = adjustment != null && adjustment.daysWorked() != fromAttendance;
-
-                    return DaysWorkedRecord.builder()
-                            .employeeId(employee.getId())
-                            .branchId(request.branchId())
-                            .periodStart(start)
-                            .periodEnd(end)
-                            .systemDays(fromAttendance)
-                            .daysWorked(adjustment != null ? adjustment.daysWorked() : fromAttendance)
-                            .adjusted(adjusted)
-                            .adjustmentReason(adjusted ? adjustment.reason().trim() : null)
-                            .lockedByUserId(lockedByUserId)
-                            .lockedAt(lockedAt)
-                            .build();
-                })
-                .toList();
-
-        Map<Long, Employee> employeesById = employees.stream()
-                .collect(Collectors.toMap(Employee::getId, Function.identity()));
-
-        return daysWorkedRecordRepository.saveAll(records).stream()
-                .map(record -> daysWorkedMapper.toResponse(record, employeesById.get(record.getEmployeeId())))
-                .toList();
-    }
-
-    @Override
-    @Transactional
-    public void unlockPeriod(Long branchId, LocalDate periodStart, LocalDate periodEnd) {
-        validatePeriod(periodStart, periodEnd);
-
-        List<DaysWorkedRecord> records = daysWorkedRecordRepository
-                .findByBranchIdAndPeriodStartAndPeriodEnd(branchId, periodStart, periodEnd);
-        if (records.isEmpty()) {
-            throw new InvalidOperationException("No locked days found for this branch and period");
-        }
-
-        // Once an agent has been paid for the period, the figure is history: reopening it would let
-        // the days be changed after the money has moved.
-        List<Long> agentIds = employeeRepository.findAllById(records.stream().map(DaysWorkedRecord::getEmployeeId).toList()).stream()
-                .map(employee -> employee.getAgentId())
-                .filter(java.util.Objects::nonNull)
-                .distinct()
-                .toList();
-        if (!agentIds.isEmpty() && !agentSettlementRepository.findAgentIdsPaidForOverlappingPeriod(agentIds, periodStart, periodEnd).isEmpty()) {
-            throw new InvalidOperationException(
-                    "Agents have already been paid for this period, so its days worked can no longer be unlocked");
-        }
-        daysWorkedRecordRepository.deleteAll(records);
-    }
-
-    @Override
-    public Map<Long, Integer> getLockedDays(List<Long> employeeIds, LocalDate periodStart, LocalDate periodEnd) {
+    public Map<Long, Integer> getDaysForPayment(List<Long> employeeIds, LocalDate periodStart, LocalDate periodEnd) {
         if (employeeIds == null || employeeIds.isEmpty()) {
             return Map.of();
         }
-        return daysWorkedRecordRepository
-                .findByEmployeeIdInAndPeriodStartAndPeriodEnd(employeeIds, periodStart, periodEnd).stream()
-                .collect(Collectors.toMap(DaysWorkedRecord::getEmployeeId, DaysWorkedRecord::getDaysWorked, (a, b) -> a));
+        Map<Long, Integer> days = new HashMap<>(countSystemDays(employeeIds, periodStart, periodEnd));
+        employeeIds.forEach(id -> days.putIfAbsent(id, 0));
+        // A period locked before locking was removed keeps its (possibly adjusted) figure.
+        daysWorkedRecordRepository.findByEmployeeIdInAndPeriodStartAndPeriodEnd(employeeIds, periodStart, periodEnd)
+                .forEach(record -> days.put(record.getEmployeeId(), record.getDaysWorked()));
+        return days;
     }
 
     // ---- helpers ----

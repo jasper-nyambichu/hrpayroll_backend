@@ -34,7 +34,8 @@ public class UserMapper {
                 user.getEmail(),
                 user.getBranchId(),
                 user.getAgentId(),
-                user.isActive()
+                user.isActive(),
+                user.getEmployeeId()
         );
     }
 }

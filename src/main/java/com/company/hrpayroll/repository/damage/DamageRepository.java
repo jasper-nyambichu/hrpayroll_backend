@@ -20,4 +20,5 @@ public interface DamageRepository extends JpaRepository<Damage, Long> {
     List<Damage> findByEmployeeIdInAndStatus(List<Long> employeeIds, String status);
 
     Optional<Damage> findByConsentEventId(String consentEventId);
+    List<Damage> findByPayrollRunIdIn(List<Long> payrollRunIds);
 }
