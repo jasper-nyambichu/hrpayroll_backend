@@ -5,6 +5,8 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -44,6 +46,44 @@ public class PasswordResetMailer {
 
     @Value("${app.frontend-url:http://localhost:3000}")
     private String frontendUrl;
+
+    @Value("${spring.mail.host:localhost}")
+    private String mailHost;
+
+    // Without MAIL_HOST the codes go to localhost:1025 (MailHog on a developer PC). On a server that means
+    // every reset email silently fails while the page still says it was sent, so say so loudly at startup.
+    @EventListener(ApplicationReadyEvent.class)
+    public void warnIfMailNotConfigured() {
+        if (mailHost == null || mailHost.isBlank() || mailHost.equals("localhost") || mailHost.equals("127.0.0.1")) {
+            log.warn("Email is not configured (MAIL_HOST is '{}'): password reset codes will NOT reach anyone outside this machine. "
+                    + "Set MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_SMTP_AUTH, MAIL_SMTP_STARTTLS and MAIL_FROM.", mailHost);
+        }
+    }
+
+    /**
+     * Admin → Settings "Send a test email": sends at once (not in the background) so the Admin sees the mail
+     * server's own answer. Null when it was accepted for delivery, otherwise what went wrong.
+     */
+    public String sendTest(String to) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
+            helper.setFrom(from);
+            helper.setTo(to);
+            helper.setSubject("Test email from " + systemName());
+            String text = "This is a test email from " + systemName() + ". If you can read it, password reset codes can be delivered.";
+            helper.setText(text, "<div style=\"font-family:Arial,Helvetica,sans-serif;padding:24px\"><p>" + HtmlUtils.htmlEscape(text) + "</p></div>");
+            mailSender.send(message);
+            return null;
+        } catch (MessagingException | MailException ex) {
+            log.warn("Test email to {} failed: {}", to, ex.getMessage());
+            Throwable root = ex;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            return root.getMessage() != null ? root.getMessage() : ex.getMessage();
+        }
+    }
 
     @Async
     public void sendCode(String to, String name, String username, String code, int minutesValid) {

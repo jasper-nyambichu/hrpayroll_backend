@@ -12,9 +12,11 @@ spring:
     url: jdbc:postgresql://localhost:5433/hrpayroll
     username: hrpayroll_user
     password: hrpayroll@128
+    # 5 connections made concurrent requests queue for one (a burst of 30 took 10x longer than one alone).
+    # 15 stays far below PostgreSQL's default limit of 100 and fits the 400 MB heap.
     hikari:
-      maximum-pool-size: 5
-      minimum-idle: 2
+      maximum-pool-size: ${DB_POOL_SIZE:15}
+      minimum-idle: 5
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 900000
