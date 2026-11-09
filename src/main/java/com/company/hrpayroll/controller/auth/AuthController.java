@@ -36,7 +36,8 @@ public class AuthController {
         return ApiResponse.success("Login successful", authService.employeeLogin(request));
     }
 
-    @PostMapping("/agent-login")
+    // /agent/login is the address in use; /agent-login stays only so a web build older than this backend still works.
+    @PostMapping({"/agent/login", "/agent-login"})
     public ApiResponse<AuthResponse> agentLogin(@Valid @RequestBody AgentLoginRequest request) {
         return ApiResponse.success("Login successful", authService.agentLogin(request));
     }
