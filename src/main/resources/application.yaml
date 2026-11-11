@@ -72,6 +72,9 @@ app:
     # Left unset, a key derived from BIOMETRIC_TEMPLATE_KEY is used instead.
     key: ${CREDENTIAL_KEY:}
   jwt:
-    secret: 24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=
+    # Signs login tokens. Every organisation MUST set its own JWT_SECRET (base64 of 32 random bytes:
+    # `openssl rand -base64 32`), or a token from one organisation's backend is accepted by another's.
+    # The default is the value Kisiimatt has always used, so leaving it unset there logs nobody out.
+    secret: ${JWT_SECRET:24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=}
     access-token-expiry-ms: 900000
     refresh-token-expiry-ms: 604800000

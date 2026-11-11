@@ -1,14 +1,22 @@
+# One copy of this file per organisation, each in its own folder with its own .env, e.g.
+#   ~/kisiimatt      STACK=kisiimatt      BACKEND_PORT=8081  PG_VOLUME=hrpayroll_backend_hrpayroll_pgdata
+#   ~/shahceramics   STACK=shahceramics   BACKEND_PORT=8082  PG_VOLUME=shahceramics_pgdata
+# STACK names the containers (kisiimatt-backend, kisiimatt-postgres, ...). PG_VOLUME is the database:
+# Kisiimatt keeps the volume it has always used, so renaming never starts it on an empty database.
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: hrpayroll-postgres
+    container_name: ${STACK:?set STACK in .env}-postgres
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - hrpayroll_pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -19,8 +27,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: hrpayroll-redis
+    container_name: ${STACK:?set STACK in .env}-redis
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -32,9 +43,12 @@ services:
 
   backend:
     image: ghcr.io/jasper-nyambichu/hrpayroll_backend:${IMAGE_TAG:-latest}
-    container_name: hrpayroll-backend
+    container_name: ${STACK:?set STACK in .env}-backend
     env_file: .env
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,12 +65,13 @@ services:
       SPRINGDOC_SWAGGER_UI_ENABLED: "false"
       JDK_JAVA_OPTIONS: "-Xmx400m -Xms128m"
     ports:
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
     networks:
       - hrpayroll-net
 
 volumes:
-  hrpayroll_pgdata:
+  pgdata:
+    name: ${PG_VOLUME:?set PG_VOLUME in .env}
 
 networks:
   hrpayroll-net:

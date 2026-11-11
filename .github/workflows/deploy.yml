@@ -111,16 +111,23 @@
             key: ${{ secrets.VPS_SSH_KEY }}
             script: |
               set -eu
-              cd ~/hrpayroll_backend
               export IMAGE_TAG=${{ github.sha }}
-              
-              docker compose -p hrpayroll_backend -f docker-compose.prod.yml pull backend
-              docker compose -p hrpayroll_backend -f docker-compose.prod.yml up -d --no-deps backend
-              docker compose -p hrpayroll_backend -f docker-compose.prod.yml ps backend
-              
-              sleep 10
-              
-              if ! docker inspect -f '{{.State.Running}}' hrpayroll-backend | grep -qx true; then
-                docker logs --tail 100 hrpayroll-backend
-                exit 1
-              fi
+
+              # One folder per organisation (see docker-compose.prod.yml). A folder that does not
+              # exist yet is skipped, so an organisation can be added to the list before its server is set up.
+              for stack in kisiimatt shahceramics; do
+                [ -f ~/"$stack"/docker-compose.prod.yml ] || { echo "skip $stack: not set up"; continue; }
+                echo "=== deploying $stack ==="
+                cd ~/"$stack"
+                docker compose -p "$stack" -f docker-compose.prod.yml pull backend
+                docker compose -p "$stack" -f docker-compose.prod.yml up -d --no-deps backend
+                docker compose -p "$stack" -f docker-compose.prod.yml ps backend
+                sleep 10
+                if ! docker inspect -f '{{.State.Running}}' "$stack-backend" | grep -qx true; then
+                  docker logs --tail 100 "$stack-backend"
+                  exit 1
+                fi
+              done
+
+              # Old images pile up with every release; keep a week's worth for rolling back.
+              docker image prune -af --filter "until=168h" >/dev/null || true

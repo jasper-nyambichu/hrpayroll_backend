@@ -106,6 +106,12 @@ class PayslipPdfTest {
         if (folder == null) {
             return;
         }
+        String realLogo = System.getenv("PDF_PREVIEW_LOGO");
+        if (realLogo != null) {
+            preview(render(payslip("Asha Wanjiru", List.of(new PayslipResponse.RecordedPayment("QAB123XYZ", new BigDecimal("10000.00"), LocalDate.of(2026, 12, 2)))),
+                    new PdfDocumentWriter.Letterhead("Kisiimatt Limited", Files.readAllBytes(Path.of(realLogo)), "Kisii Town, Hospital Road", "+254 700 000 000", "hr@kisiimatt.example")),
+                    Path.of(folder, "real-logo.png"));
+        }
         List<PayslipResponse.RecordedPayment> paid = List.of(new PayslipResponse.RecordedPayment("QAB123XYZ", new BigDecimal("10000.00"), LocalDate.of(2026, 12, 2)));
         preview(render(payslip("Asha Wanjiru", paid), new PdfDocumentWriter.Letterhead("Dhwarsh Limited", logo(400, 160), "Kisii Town, Hospital Road", "+254 700 000 000", "hr@dhwarsh.example")), Path.of(folder, "with-logo.png"));
         preview(render(payslip("Asha Wanjiru", List.of()), new PdfDocumentWriter.Letterhead("Dhwarsh Limited", null, null, "+254 700 000 000", null)), Path.of(folder, "no-logo.png"));
