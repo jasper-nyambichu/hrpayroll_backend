@@ -27,6 +27,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -150,12 +151,31 @@ class LunchAndTemporaryCheckoutTest {
         assertNull(shift.getClockOut());
     }
 
+    // Two Back Office PCs at one branch: both may record the same step before hearing of each other.
+    // The first counts; the second is accepted without recording anything (never a second break).
     @Test
-    void someoneAlreadyOutCannotLeaveAgain() {
+    void someoneAlreadyOutIsNotRecordedOutTwice() {
         when(checkouts.findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(50L))
                 .thenReturn(Optional.of(AttendanceCheckout.builder().attendanceId(50L).checkedOutAt(NOON).build()));
 
-        assertThrows(InvalidOperationException.class, () -> service.syncEvent(scan("e8", "LUNCH_OUT", NOON.plusMinutes(1), null, null)));
+        assertDoesNotThrow(() -> service.syncEvent(scan("e8", "LUNCH_OUT", NOON.plusMinutes(1), null, null)));
+        verify(checkouts, never()).save(any());
+    }
+
+    @Test
+    void aReturnAlreadyMadeOnTheOtherPcIsNotRecordedTwice() {
+        when(checkouts.findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(50L)).thenReturn(Optional.empty());
+        when(checkouts.findByAttendanceIdInOrderByCheckedOutAtAsc(any())).thenReturn(java.util.List.of(
+                AttendanceCheckout.builder().attendanceId(50L).checkedOutAt(NOON.minusMinutes(40)).checkedInAt(NOON.minusMinutes(5)).build()));
+
+        assertDoesNotThrow(() -> service.syncEvent(scan("e10", "BREAK_RETURN", NOON, null, null)));
+        verify(checkouts, never()).save(any());
+    }
+
+    @Test
+    void aSecondCheckInFromTheOtherPcIsNotRecordedTwice() {
+        assertDoesNotThrow(() -> service.syncEvent(scan("e11", "CLOCK_IN", NOON, null, null)));
+        verify(attendance, never()).save(any());
     }
 
     @Test

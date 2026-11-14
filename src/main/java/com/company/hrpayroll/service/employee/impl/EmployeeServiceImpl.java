@@ -83,6 +83,12 @@ public class EmployeeServiceImpl implements EmployeeService {
     public EmployeeResponse updateEmployee(Long id, EmployeeRequest request) {
         Employee employee = findEmployeeOrThrow(id);
 
+        // Someone else saved this employee after the editor opened it: refuse rather than overwrite their change.
+        if (request.version() != null && !request.version().equals(employee.getVersion())) {
+            throw new DuplicateResourceException(
+                    "This employee was changed by someone else while you were editing. Reload the page to see their changes, then edit again.");
+        }
+
         // A move has its own endpoint, because it also has to tidy up terminals and the login.
         if (!employee.getBranchId().equals(request.branchId())) {
             throw new InvalidOperationException("Move an employee to another branch from the Branch card on their record");

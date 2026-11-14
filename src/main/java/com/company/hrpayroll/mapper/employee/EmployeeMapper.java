@@ -100,7 +100,8 @@ public class EmployeeMapper {
                 employee.getBankName(),
                 employee.getBankAccountNumber(),
                 employee.getEmergencyContactName(),
-                employee.getEmergencyContactPhone()
+                employee.getEmergencyContactPhone(),
+                employee.getVersion()
         );
     }
 

@@ -25,7 +25,8 @@ public class BiometricDeviceController {
     private final BiometricDeviceService biometricDeviceService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasRole('BACK_OFFICE') and @accessGuard.isSameBranch(#request.branchId()))")
+    // The Back Office or the Branch Manager activates a PC of their own branch; every PC of a branch can be activated.
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER') and @accessGuard.isSameBranch(#request.branchId()))")
     @Auditable(action = "BIOMETRIC_DEVICE_REGISTERED", entityType = "BiometricDevice")
     public ApiResponse<DeviceRegistrationResponse> registerDevice(
             @Valid @RequestBody DeviceRegistrationRequest request
@@ -43,7 +44,7 @@ public class BiometricDeviceController {
     }
 
     @PutMapping("/{deviceId}/deactivate")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasRole('BACK_OFFICE') and @accessGuard.isDeviceInMyBranch(#deviceId))")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or (hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER') and @accessGuard.isDeviceInMyBranch(#deviceId))")
     @Auditable(action = "BIOMETRIC_DEVICE_DEACTIVATED", entityType = "BiometricDevice")
     public ApiResponse<Void> deactivateDevice(@PathVariable Long deviceId) {
         biometricDeviceService.deactivateDevice(deviceId);

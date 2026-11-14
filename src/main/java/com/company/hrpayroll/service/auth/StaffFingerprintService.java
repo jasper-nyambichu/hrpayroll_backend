@@ -104,15 +104,20 @@ public class StaffFingerprintService {
      * serial comes from the authenticated device token, never from the request body.
      */
     public AuthResponse signIn(String deviceSerial, String terminalUserId, String requestedRole) {
-        Role role;
-        try {
-            role = Role.valueOf(requestedRole);
-        } catch (IllegalArgumentException | NullPointerException e) {
-            throw new InvalidOperationException("Unknown role");
+        // "STAFF": whichever of the two logins this finger is linked to (the branch PC has one staff sign-in
+        // for the Back Office and the Branch Manager). A named role still works for older PCs.
+        Role role = null;
+        if (!"STAFF".equals(requestedRole)) {
+            try {
+                role = Role.valueOf(requestedRole);
+            } catch (IllegalArgumentException | NullPointerException e) {
+                throw new InvalidOperationException("Unknown role");
+            }
+            if (!LINKABLE_ROLES.contains(role)) {
+                throw new InvalidOperationException("Fingerprint sign-in is for the Branch Manager and the Back Office only");
+            }
         }
-        if (!LINKABLE_ROLES.contains(role)) {
-            throw new InvalidOperationException("Fingerprint sign-in is for the Branch Manager and the Back Office only");
-        }
+        final Role wanted = role;
 
         BiometricDevice device = deviceRepository.findByDeviceSerial(deviceSerial)
                 .filter(found -> "ACTIVE".equals(found.getStatus()))
@@ -121,20 +126,21 @@ public class StaffFingerprintService {
         Long employeeId = terminalIdentity.employeeFor(device.getId(), terminalUserId).orElse(null);
         Employee employee = employeeId == null ? null : employeeRepository.findById(employeeId).orElse(null);
         if (employee == null || !Objects.equals(employee.getBranchId(), device.getBranchId())) {
-            throw new InvalidOperationException(notLinked(role));
+            throw new InvalidOperationException(notLinked(wanted));
         }
 
         User user = userRepository.findByEmployeeIdIn(List.of(employeeId)).stream()
-                .filter(found -> found.getRole() == role && found.isActive() && !found.isDeleted())
+                .filter(found -> (wanted == null ? LINKABLE_ROLES.contains(found.getRole()) : found.getRole() == wanted)
+                        && found.isActive() && !found.isDeleted())
                 .filter(found -> Objects.equals(found.getBranchId(), device.getBranchId()))
                 .findFirst()
-                .orElseThrow(() -> new InvalidOperationException(notLinked(role)));
+                .orElseThrow(() -> new InvalidOperationException(notLinked(wanted)));
 
         return authService.fingerprintLogin(user, deviceSerial);
     }
 
     private static String notLinked(Role role) {
-        String who = role == Role.BRANCH_MANAGER ? "Branch Manager" : "Back Office";
+        String who = role == null ? "Back Office or Branch Manager" : role == Role.BRANCH_MANAGER ? "Branch Manager" : "Back Office";
         return "This fingerprint is not linked to this branch's " + who + " login. "
                 + "Ask the Admin to link the login to your employee record, or sign in with your password.";
     }

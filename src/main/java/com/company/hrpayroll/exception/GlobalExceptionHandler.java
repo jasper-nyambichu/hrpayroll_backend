@@ -35,6 +35,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
     }
 
+    // Two saves of the same record at once: the second is refused instead of silently overwriting the first.
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleStaleSave(org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error("Someone else changed this record at the same time. Reload the page and try again."));
+    }
+
+    // A database constraint (a duplicate M-Pesa code, a second settlement for the same period, ...) is the last
+    // line of defence. It used to surface as an unexplained 500; the details stay in the server log only.
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraint(org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Refused by a database constraint: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error("This could not be saved because it duplicates or contradicts a record that already exists."));
+    }
+
     @ExceptionHandler({InvalidCredentialsException.class, BadCredentialsException.class})
     public ResponseEntity<ApiResponse<Void>> handleBadCredentials(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -88,8 +104,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
         log.error("Unhandled exception", ex);
+        // The reference is the request ID on this request's log lines, so support can find exactly what failed.
+        String reference = com.company.hrpayroll.config.RequestIdFilter.current();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("Something went wrong. Please try again."));
+                .body(ApiResponse.error("Something went wrong. Please try again."
+                        + (reference != null ? " (Reference " + reference + ")" : "")));
     }
 
     @ExceptionHandler(AccountLockedException.class)

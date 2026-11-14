@@ -66,12 +66,26 @@ services:
       JDK_JAVA_OPTIONS: "-Xmx400m -Xms128m"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
+    # Uploaded documents live outside the container, so a redeploy no longer deletes them.
+    volumes:
+      - uploads:/app/uploads
+    # "Healthy" only once it answers HTTP, not merely once the process exists. The deploy waits for it.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/public/organisation || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 120s
+    # A runaway backend cannot starve the other organisation on the same VM (heap is capped at 400 MB above).
+    mem_limit: 1g
     networks:
       - hrpayroll-net
 
 volumes:
   pgdata:
     name: ${PG_VOLUME:?set PG_VOLUME in .env}
+  uploads:
+    name: ${STACK:?set STACK in .env}_uploads
 
 networks:
   hrpayroll-net:

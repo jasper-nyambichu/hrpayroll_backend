@@ -21,6 +21,12 @@ import java.time.LocalDate;
 @Builder
 public class Employee extends BaseEntity {
 
+    // Optimistic locking: two people editing the same employee can no longer silently overwrite each other.
+    // Hibernate raises it by one on every save; a stale save is refused (see EmployeeServiceImpl.updateEmployee).
+    @Version
+    @Column(nullable = false)
+    private Long version;
+
     // Personal information
     @Column(nullable = false, length = 150)
     private String fullName;

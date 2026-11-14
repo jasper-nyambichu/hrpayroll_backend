@@ -103,6 +103,16 @@
               ghcr.io/jasper-nyambichu/hrpayroll_backend:${{ github.sha }}
               ghcr.io/jasper-nyambichu/hrpayroll_backend:latest
 
+        # The compose file and server scripts travel with each release, so the server never runs an old copy.
+        - name: Copy deploy files to VPS
+          uses: appleboy/scp-action@v0.1.7
+          with:
+            host: ${{ secrets.VPS_HOST }}
+            username: ${{ secrets.VPS_USER }}
+            key: ${{ secrets.VPS_SSH_KEY }}
+            source: "docker-compose.prod.yml,deploy/backup.sh,deploy/restore-check.sh,deploy/new-organisation.sql"
+            target: "dhwarsh-deploy"   # relative to the deploy user's home
+
         - name: Deploy to VPS
           uses: appleboy/ssh-action@v1.2.2
           with:
@@ -112,21 +122,38 @@
             script: |
               set -eu
               export IMAGE_TAG=${{ github.sha }}
+              chmod +x ~/dhwarsh-deploy/deploy/*.sh || true
 
-              # One folder per organisation (see docker-compose.prod.yml). A folder that does not
-              # exist yet is skipped, so an organisation can be added to the list before its server is set up.
+              # One folder per organisation (see docker-compose.prod.yml), deployed one after the other.
+              #  - A folder that does not exist yet is skipped (an organisation can be listed before it is set up).
+              #  - A folder holding a file named HOLD is skipped: that organisation stays on its current version
+              #    until the file is removed (rm ~/<stack>/HOLD).
+              #  - If one organisation fails its health check, the deploy stops there and the rest are untouched.
               for stack in kisiimatt shahceramics; do
-                [ -f ~/"$stack"/docker-compose.prod.yml ] || { echo "skip $stack: not set up"; continue; }
+                [ -f ~/"$stack"/.env ] || { echo "skip $stack: not set up"; continue; }
+                [ -f ~/"$stack"/HOLD ] && { echo "skip $stack: on hold ($(head -c 200 ~/"$stack"/HOLD))"; continue; }
                 echo "=== deploying $stack ==="
                 cd ~/"$stack"
+                [ -f docker-compose.prod.yml ] && cp docker-compose.prod.yml docker-compose.prod.yml.previous
+                cp ~/dhwarsh-deploy/docker-compose.prod.yml docker-compose.prod.yml
                 docker compose -p "$stack" -f docker-compose.prod.yml pull backend
                 docker compose -p "$stack" -f docker-compose.prod.yml up -d --no-deps backend
-                docker compose -p "$stack" -f docker-compose.prod.yml ps backend
-                sleep 10
-                if ! docker inspect -f '{{.State.Running}}' "$stack-backend" | grep -qx true; then
+
+                # Wait until it answers HTTP (the container health check), up to 4 minutes.
+                status=starting
+                for i in $(seq 1 48); do
+                  status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$stack-backend" 2>/dev/null || echo missing)
+                  [ "$status" = healthy ] && break
+                  [ "$status" = unhealthy ] && break
+                  sleep 5
+                done
+                if [ "$status" != healthy ]; then
+                  echo "!!! $stack is $status after deploying $IMAGE_TAG"
                   docker logs --tail 100 "$stack-backend"
                   exit 1
                 fi
+                port=$(grep -E '^BACKEND_PORT=' .env | cut -d= -f2); port=${port:-8081}
+                echo "smoke test $stack: $(curl -fsS "http://127.0.0.1:$port/public/organisation" | head -c 200)"
               done
 
               # Old images pile up with every release; keep a week's worth for rolling back.

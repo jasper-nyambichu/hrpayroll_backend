@@ -34,5 +34,8 @@ public record EmployeeRequest(
         String bankName,
         String bankAccountNumber,
         String emergencyContactName,
-        String emergencyContactPhone
+        String emergencyContactPhone,
+        // Optional: the version the editor started from (EmployeeResponse.version). When it is given and the
+        // employee has changed since, the edit is refused with 409 rather than overwriting the other change.
+        Long version
 ) {}

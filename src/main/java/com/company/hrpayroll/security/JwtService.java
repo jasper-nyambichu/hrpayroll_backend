@@ -27,6 +27,20 @@ JwtService {
     @Value("${app.jwt.refresh-token-expiry-ms}")
     private long refreshTokenExpiryMs;
 
+    // The value written in application.yaml as the fallback. Anyone with the source code knows it, so a
+    // server using it is warned at every start until JWT_SECRET is set in its .env (with this same value
+    // first, if nobody should be logged out; a new value later signs everyone out once).
+    private static final String PUBLIC_DEFAULT = "24hx2bKUfYqv6pY0ydoUW9FdDQIpPoesNaH62ICiiBk=";
+
+    @jakarta.annotation.PostConstruct
+    void warnIfDefaultSecret() {
+        if (PUBLIC_DEFAULT.equals(secret)) {
+            org.slf4j.LoggerFactory.getLogger(JwtService.class).warn(
+                    "JWT_SECRET is not set: login tokens are signed with the default key from the source code. "
+                            + "Set JWT_SECRET in this server's .env (openssl rand -base64 32).");
+        }
+    }
+
     private SecretKey signingKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());
     }

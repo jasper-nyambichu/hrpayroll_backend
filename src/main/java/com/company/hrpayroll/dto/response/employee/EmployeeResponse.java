@@ -36,7 +36,9 @@ public record EmployeeResponse(
         String bankName,
         String bankAccountNumber,
         String emergencyContactName,
-        String emergencyContactPhone
+        String emergencyContactPhone,
+        // Sent back with an edit, so a save made from an out-of-date screen is refused instead of overwriting.
+        Long version
 ) {
 
     // What a Branch Manager receives: pay comes from the payment formula and is not theirs to see.
@@ -45,6 +47,6 @@ public record EmployeeResponse(
                 id, fullName, employeeNumber, passportPhotoUrl, nationalId, dateOfBirth, gender, maritalStatus,
                 phone, email, address, kraPin, shifNumber, nssfNumber, nitaNumber, branchId, branchName,
                 departmentId, departmentName, agentId, agentName, position, employmentType, null, dateHired,
-                employmentStatus, bankName, bankAccountNumber, emergencyContactName, emergencyContactPhone);
+                employmentStatus, bankName, bankAccountNumber, emergencyContactName, emergencyContactPhone, version);
     }
 }

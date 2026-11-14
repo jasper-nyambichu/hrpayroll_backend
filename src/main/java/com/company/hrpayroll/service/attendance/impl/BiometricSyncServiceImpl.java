@@ -19,13 +19,16 @@ import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.repository.leave.LeaveRequestRepository;
 import com.company.hrpayroll.service.attendance.BiometricSyncService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BiometricSyncServiceImpl implements BiometricSyncService {
@@ -142,12 +145,14 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     private Attendance handleClockIn(Employee employee, LocalDateTime eventTime,
                                      BiometricSyncRequest request, BiometricDevice device) {
 
-        boolean alreadyOpen = attendanceRepository
+        // Already checked in (typically on the branch's other PC): nothing to add, and not an error. Two PCs
+        // can each record the same step before they hear of each other; the first one to arrive counts.
+        var alreadyOpen = attendanceRepository
                 .findFirstByEmployeeIdAndAttendanceDateAndClockOutIsNullOrderByClockInDesc(
-                        employee.getId(), eventTime.toLocalDate())
-                .isPresent();
-        if (alreadyOpen) {
-            throw new InvalidOperationException("Employee already has an open clock-in for today");
+                        employee.getId(), eventTime.toLocalDate());
+        if (alreadyOpen.isPresent()) {
+            log.info("Check-in {} for employee {} absorbed: already checked in", request.eventId(), employee.getId());
+            return alreadyOpen.get();
         }
 
         Attendance attendance = Attendance.builder()
@@ -168,10 +173,11 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     private Attendance handleBreakOut(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request, boolean lunch) {
         Attendance open = openSession(employee, eventTime, "No open clock-in found for this employee to step out from");
 
-        checkoutRepository.findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(open.getId())
-                .ifPresent(c -> {
-                    throw new InvalidOperationException("Employee is already out and has not scanned back in");
-                });
+        // Already out (the other PC recorded it first): the step has happened, so this copy adds nothing.
+        if (checkoutRepository.findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(open.getId()).isPresent()) {
+            log.info("Step-out {} for employee {} absorbed: already out", request.eventId(), employee.getId());
+            return open;
+        }
 
         LocalDateTime expectedBack;
         String reason = null;
@@ -211,7 +217,17 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
 
         AttendanceCheckout out = checkoutRepository
                 .findFirstByAttendanceIdAndCheckedInAtIsNullOrderByCheckedOutAtDesc(open.getId())
-                .orElseThrow(() -> new InvalidOperationException("Employee is not out on a break"));
+                .orElse(null);
+        if (out == null) {
+            // Back already (the other PC recorded the return first): nothing more to record.
+            boolean returnedEarlier = checkoutRepository.findByAttendanceIdInOrderByCheckedOutAtAsc(List.of(open.getId())).stream()
+                    .anyMatch(c -> c.getCheckedInAt() != null);
+            if (returnedEarlier) {
+                log.info("Return {} for employee {} absorbed: already back", request.eventId(), employee.getId());
+                return open;
+            }
+            throw new InvalidOperationException("Employee is not out on a break");
+        }
 
         // Never earlier than when they left (device clock skew).
         out.setCheckedInAt(eventTime.isBefore(out.getCheckedOutAt()) ? out.getCheckedOutAt() : eventTime);
@@ -232,6 +248,24 @@ public class BiometricSyncServiceImpl implements BiometricSyncService {
     }
 
     private Attendance handleClockOut(Employee employee, LocalDateTime eventTime, BiometricSyncRequest request) {
+        // Checked out already today (the other PC recorded it first): the day is closed, nothing more to do.
+        var openToday = attendanceRepository.findFirstByEmployeeIdAndAttendanceDateAndClockOutIsNullOrderByClockInDesc(
+                employee.getId(), eventTime.toLocalDate());
+        if (openToday.isEmpty()) {
+            var closedToday = attendanceRepository
+                    .findByEmployeeIdAndAttendanceDateBetween(employee.getId(), eventTime.toLocalDate(), eventTime.toLocalDate())
+                    .stream()
+                    .filter(a -> a.getClockOut() != null)
+                    .max(java.util.Comparator.comparing(Attendance::getClockOut));
+            boolean anyOpenRecently = attendanceRepository.findFirstByEmployeeIdAndClockOutIsNullOrderByClockInDesc(employee.getId())
+                    .filter(a -> isRecentOpenSession(a, eventTime))
+                    .isPresent();
+            if (closedToday.isPresent() && !anyOpenRecently) {
+                log.info("Check-out {} for employee {} absorbed: already checked out", request.eventId(), employee.getId());
+                return closedToday.get();
+            }
+        }
+
         Attendance open = openSession(employee, eventTime, "No open clock-in found for this employee to close");
 
         // Never record a clock-out earlier than its clock-in (device clock skew).

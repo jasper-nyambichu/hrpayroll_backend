@@ -36,6 +36,7 @@ public class BiometricSyncController {
     private final DamageService damageService;
     private final com.company.hrpayroll.service.attendance.BiometricDeviceService biometricDeviceService;
     private final com.company.hrpayroll.service.auth.StaffFingerprintService staffFingerprintService;
+    private final com.company.hrpayroll.service.attendance.impl.DeviceDayStateService deviceDayStateService;
 
     // The finger the branch PC recognised (its terminal user id) and which login to open with it.
     public record StaffFingerprintLoginRequest(
@@ -54,6 +55,17 @@ public class BiometricSyncController {
         }
 
         return ApiResponse.success(biometricSyncService.syncEvent(request));
+    }
+
+    // Today's steps at the calling PC's branch (from every PC of the branch, and manual check-ins), so each PC
+    // decides what a scan means from the same day. Only an authenticated, active PC; only its own branch.
+    @GetMapping("/today")
+    public ApiResponse<List<com.company.hrpayroll.dto.response.attendance.DeviceDayEventResponse>> today(HttpServletRequest httpRequest) {
+        String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
+        if (deviceSerial == null) {
+            throw new org.springframework.security.access.AccessDeniedException("This PC's reader is not activated");
+        }
+        return ApiResponse.success(deviceDayStateService.todayForDevice(deviceSerial));
     }
 
     // Sent by a branch PC every minute, and at once when its reader is plugged in or out.

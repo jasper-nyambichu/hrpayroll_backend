@@ -225,7 +225,7 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
                 r.nssfNumber(), r.nitaNumber(), branchId, r.departmentId(), agentId,
                 r.position(), r.employmentType(), basicSalary, r.dateHired(),
                 r.bankName(), r.bankAccountNumber(), r.emergencyContactName(),
-                r.emergencyContactPhone());
+                r.emergencyContactPhone(), null);
     }
 
     // Tells the agent's login about an outcome, unless the agent is the one who asked.
@@ -290,7 +290,7 @@ public class EmployeeCreationRequestServiceImpl implements EmployeeCreationReque
                 e.getNssfNumber(), e.getNitaNumber(), e.getBranchId(), e.getDepartmentId(), e.getAgentId(),
                 e.getPosition(), e.getEmploymentType(), e.getBasicSalary(), e.getDateHired(),
                 e.getBankName(), e.getBankAccountNumber(), e.getEmergencyContactName(),
-                e.getEmergencyContactPhone());
+                e.getEmergencyContactPhone(), null);
     }
 
     private EmployeeCreationRequestResponse toResponse(EmployeeCreationRequest e) {

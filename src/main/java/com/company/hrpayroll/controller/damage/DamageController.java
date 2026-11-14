@@ -31,10 +31,10 @@ public class DamageController {
     // Recording, overriding and cancelling are the Back Office's job at its own branch (Admin can step in).
     private static final String DAMAGE_ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
     private static final String DAMAGE_OF_MY_BRANCH =
-            " or (hasRole('BACK_OFFICE') and @accessGuard.isDamageInMyBranch(#damageId))";
+            " or (hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER') and @accessGuard.isDamageInMyBranch(#damageId))";
 
     @PostMapping
-    @PreAuthorize(DAMAGE_ADMIN_ROLES + " or (hasRole('BACK_OFFICE') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
+    @PreAuthorize(DAMAGE_ADMIN_ROLES + " or (hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#request.employeeId()))")
     @Auditable(action = "DAMAGE_RECORDED", entityType = "Damage")
     public ApiResponse<DamageResponse> recordDamage(@Valid @RequestBody DamageRequest request) {
         return ApiResponse.success("Damage recorded — awaiting the employee's fingerprint",
@@ -63,12 +63,13 @@ public class DamageController {
 
     // Optional ?status=PENDING_CONSENT|APPROVED|CANCELLED|DEDUCTED and ?employeeId=. Newest first.
     @GetMapping
-    @PreAuthorize(DAMAGE_READ_ROLES + " or hasRole('BACK_OFFICE')")
+    @PreAuthorize(DAMAGE_READ_ROLES + " or hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER')")
     public ApiResponse<List<DamageResponse>> getDamages(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long employeeId
     ) {
-        if (accessGuard.isBackOffice()) {
+        // The Back Office and the Branch Manager (who can stand in for it on the branch PC) see their branch only.
+        if (accessGuard.isBackOffice() || accessGuard.isBranchManager()) {
             return ApiResponse.success(damageService.getDamagesForBranch(status, employeeId, accessGuard.currentBranchId()));
         }
         return ApiResponse.success(damageService.getDamages(status, employeeId));

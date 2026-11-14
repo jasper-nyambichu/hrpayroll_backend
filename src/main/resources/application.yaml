@@ -56,6 +56,11 @@ spring:
           starttls:
             enable: ${MAIL_SMTP_STARTTLS:false}
 
+logging:
+  pattern:
+    # Every log line carries the request it belongs to (config/RequestIdFilter), e.g. "INFO [3f9c2a71d0e4b6aa]".
+    level: "%5p [%X{requestId:-}]"
+
 server:
   address: 0.0.0.0
   port: 8081

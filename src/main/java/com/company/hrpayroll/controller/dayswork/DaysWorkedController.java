@@ -21,7 +21,7 @@ public class DaysWorkedController {
 
     // The Back Office produces the figures of its own branch; Payroll reads them. Admin inherits Super Admin's access.
     private static final String DAYS_READ_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or (hasRole('BACK_OFFICE') and @accessGuard.isSameBranch(#branchId))";
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER') or (hasAnyRole('BACK_OFFICE', 'BRANCH_MANAGER') and @accessGuard.isSameBranch(#branchId))";
 
     // One row per active employee of the branch, counted live from attendance. Nothing is locked any more:
     // the agent payment calculation reads the same count whenever the Admin runs it.
