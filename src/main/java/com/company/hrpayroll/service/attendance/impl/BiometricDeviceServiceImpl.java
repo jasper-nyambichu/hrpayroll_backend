@@ -109,14 +109,18 @@ public class BiometricDeviceServiceImpl implements BiometricDeviceService {
     }
 
     // The token exists only on the PC, so a reinstall loses it for good. Registering the same reader again
-    // for its own branch issues a new one and the old one stops working. It can't take a reader from another
-    // branch, or undo an Admin's deactivation.
+    // for its own branch issues a new one and the old one stops working. An active PC can't be taken by
+    // another branch. A PC the Admin deactivated is released: the next staff sign-in sets it up for that
+    // person's branch (how a PC set up for the wrong branch, or a test branch, is moved).
     private DeviceRegistrationResponse reissueToken(BiometricDevice device, Long branchId) {
-        if (!branchId.equals(device.getBranchId())) {
-            throw new InvalidOperationException("This reader belongs to a different branch. Sign in on your own branch's computer.");
-        }
-        if (!"ACTIVE".equals(device.getStatus())) {
-            throw new InvalidOperationException("This reader has been deactivated. Ask your administrator.");
+        boolean released = !"ACTIVE".equals(device.getStatus());
+        if (released) {
+            device.setBranchId(branchId);
+            device.setStatus("ACTIVE");
+            device.setReaderConnected(null);
+            device.setPendingScans(null);
+        } else if (!branchId.equals(device.getBranchId())) {
+            throw new InvalidOperationException("This computer is set up for another branch. Ask your administrator to deactivate it under Devices, then sign in here again.");
         }
 
         String plaintextToken = generateToken();

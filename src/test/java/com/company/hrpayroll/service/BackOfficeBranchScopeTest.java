@@ -40,6 +40,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -175,7 +176,7 @@ class BackOfficeBranchScopeTest {
     }
 
     @Test
-    void aReaderCannotBeTakenFromAnotherBranchOrReactivated() {
+    void anActiveReaderCannotBeTakenFromAnotherBranch() {
         when(branches.existsById(any())).thenReturn(true);
 
         BiometricDevice elsewhere = device(6L, OTHER_BRANCH, "B");
@@ -184,13 +185,26 @@ class BackOfficeBranchScopeTest {
         assertThrows(InvalidOperationException.class,
                 () -> deviceService.registerDevice(new DeviceRegistrationRequest(OWN_BRANCH, "B")));
 
-        BiometricDevice deactivated = device(5L, OWN_BRANCH, "A");
-        deactivated.setStatus("INACTIVE");
-        when(devices.findByDeviceSerial("A")).thenReturn(Optional.of(deactivated));
-        assertThrows(InvalidOperationException.class,
-                () -> deviceService.registerDevice(new DeviceRegistrationRequest(OWN_BRANCH, "A")));
-
         verify(devices, never()).save(any());
+    }
+
+    // Deactivating a PC releases it: the next staff sign-in sets it up for that person's branch. This is how a
+    // PC set up for the wrong (or a test) branch is moved, without anyone touching the database.
+    @Test
+    void aReaderTheAdminDeactivatedIsReleasedToTheNextBranchThatSignsIn() {
+        when(branches.existsById(any())).thenReturn(true);
+        when(encoder.encode(any())).thenReturn("hash");
+
+        BiometricDevice released = device(5L, OTHER_BRANCH, "A");
+        released.setStatus("INACTIVE");
+        when(devices.findByDeviceSerial("A")).thenReturn(Optional.of(released));
+
+        var registration = deviceService.registerDevice(new DeviceRegistrationRequest(OWN_BRANCH, "A"));
+
+        assertEquals(OWN_BRANCH, released.getBranchId());
+        assertEquals("ACTIVE", released.getStatus());
+        assertNotNull(registration.plaintextToken());
+        verify(devices).save(released);
     }
 
     @Test
