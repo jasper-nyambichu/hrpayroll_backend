@@ -45,33 +45,50 @@ public class FingerprintCipher {
     }
 
     public byte[] encrypt(byte[] template, Long employeeId, short fingerSlot) {
+        return seal(template, employeeId + ":" + fingerSlot);
+    }
+
+    public byte[] decrypt(byte[] stored, Long employeeId, short fingerSlot) {
+        return open(stored, employeeId + ":" + fingerSlot, "employee " + employeeId);
+    }
+
+    // A login's sign-in finger is bound to that login (and can never pass for an employee's, or another login's).
+    public byte[] encryptForLogin(byte[] template, Long userId) {
+        return seal(template, "login:" + userId);
+    }
+
+    public byte[] decryptForLogin(byte[] stored, Long userId) {
+        return open(stored, "login:" + userId, "login " + userId);
+    }
+
+    private byte[] seal(byte[] template, String binding) {
         byte[] iv = new byte[IV_BYTES];
         random.nextBytes(iv);
         try {
-            byte[] sealed = cipher(Cipher.ENCRYPT_MODE, iv, employeeId, fingerSlot).doFinal(template);
+            byte[] sealed = cipher(Cipher.ENCRYPT_MODE, iv, binding).doFinal(template);
             return ByteBuffer.allocate(IV_BYTES + sealed.length).put(iv).put(sealed).array();
         } catch (GeneralSecurityException ex) {
             throw new IllegalStateException("Could not encrypt the fingerprint template", ex);
         }
     }
 
-    public byte[] decrypt(byte[] stored, Long employeeId, short fingerSlot) {
+    private byte[] open(byte[] stored, String binding, String owner) {
         try {
             byte[] iv = java.util.Arrays.copyOfRange(stored, 0, IV_BYTES);
-            return cipher(Cipher.DECRYPT_MODE, iv, employeeId, fingerSlot).doFinal(stored, IV_BYTES, stored.length - IV_BYTES);
+            return cipher(Cipher.DECRYPT_MODE, iv, binding).doFinal(stored, IV_BYTES, stored.length - IV_BYTES);
         } catch (GeneralSecurityException ex) {
-            throw new IllegalStateException("Could not decrypt the fingerprint template of employee " + employeeId, ex);
+            throw new IllegalStateException("Could not decrypt the fingerprint template of " + owner, ex);
         }
     }
 
-    private Cipher cipher(int mode, byte[] iv, Long employeeId, short fingerSlot) throws GeneralSecurityException {
+    private Cipher cipher(int mode, byte[] iv, String binding) throws GeneralSecurityException {
         if (key == null) {
             throw new InvalidOperationException(
                     "Fingerprint storage is not set up: BIOMETRIC_TEMPLATE_KEY must be a base64 encoded 32 byte key");
         }
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(mode, key, new GCMParameterSpec(TAG_BITS, iv));
-        cipher.updateAAD((employeeId + ":" + fingerSlot).getBytes(StandardCharsets.UTF_8));
+        cipher.updateAAD(binding.getBytes(StandardCharsets.UTF_8));
         return cipher;
     }
 }

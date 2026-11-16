@@ -18,6 +18,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.company.hrpayroll.dto.response.attendance.FingerprintSyncResponse;
+import com.company.hrpayroll.entity.auth.LoginFingerprint;
+import com.company.hrpayroll.repository.auth.LoginFingerprintRepository;
+import com.company.hrpayroll.service.attendance.impl.FingerprintCipher;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +57,8 @@ public class StaffFingerprintService {
     private final TerminalIdentity terminalIdentity;
     private final UserMapper userMapper;
     private final AuthService authService;
+    private final LoginFingerprintRepository loginFingerprintRepository;
+    private final FingerprintCipher fingerprintCipher;
 
     /** Admin: links (or, with null, unlinks) a Branch Manager or Back Office login to an employee record. */
     @Transactional
@@ -104,6 +116,9 @@ public class StaffFingerprintService {
      * serial comes from the authenticated device token, never from the request body.
      */
     public AuthResponse signIn(String deviceSerial, String terminalUserId, String requestedRole) {
+        if (terminalUserId != null && terminalUserId.startsWith(LOGIN_FINGER_PREFIX)) {
+            return signInWithLoginFinger(deviceSerial, terminalUserId, requestedRole);
+        }
         // "STAFF": whichever of the two logins this finger is linked to (the branch PC has one staff sign-in
         // for the Back Office and the Branch Manager). A named role still works for older PCs.
         Role role = null;
@@ -137,6 +152,119 @@ public class StaffFingerprintService {
                 .orElseThrow(() -> new InvalidOperationException(notLinked(wanted)));
 
         return authService.fingerprintLogin(user, deviceSerial);
+    }
+
+    // ===================================================================================================
+    //  The sign-in finger of a login itself, for a Branch Manager (or Back Office) who is not an employee.
+    // ===================================================================================================
+
+    /** How a branch PC names a login's sign-in finger: never an employee's terminal id ("emp-…"). */
+    public static final String LOGIN_FINGER_PREFIX = "staff-";
+    private static final int MAX_TEMPLATE_BYTES = 2048;
+
+    /** Whether this login has a sign-in finger registered. */
+    public boolean hasLoginFingerprint(Long userId) {
+        return loginFingerprintRepository.existsByUserId(userId);
+    }
+
+    /**
+     * The signed-in Branch Manager or Back Office registers (or replaces) their OWN sign-in finger, on an active PC
+     * of their own branch. Having just signed in proves who they are, so nobody can put a finger on someone else's login.
+     */
+    @Transactional
+    public void saveOwnLoginFingerprint(User current, String deviceSerial, String templateBase64, Integer qualityScore) {
+        if (current == null || !LINKABLE_ROLES.contains(current.getRole())) {
+            throw new InvalidOperationException("Only a Branch Manager or Back Office can register a sign-in fingerprint");
+        }
+        BiometricDevice device = deviceRepository.findByDeviceSerial(deviceSerial)
+                .filter(found -> "ACTIVE".equals(found.getStatus()))
+                .orElseThrow(() -> new InvalidOperationException("This PC's reader is not active"));
+        if (current.getBranchId() == null || !current.getBranchId().equals(device.getBranchId())) {
+            throw new InvalidOperationException("Register your fingerprint on a PC of your own branch");
+        }
+
+        byte[] template;
+        try {
+            template = Base64.getDecoder().decode(templateBase64);
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            throw new InvalidOperationException("The fingerprint template could not be read");
+        }
+        if (template.length == 0 || template.length > MAX_TEMPLATE_BYTES) {
+            throw new InvalidOperationException("The fingerprint template could not be read");
+        }
+
+        LoginFingerprint row = loginFingerprintRepository.findByUserId(current.getId())
+                .orElseGet(() -> LoginFingerprint.builder().userId(current.getId()).build());
+        row.setTemplateEncrypted(fingerprintCipher.encryptForLogin(template, current.getId()));
+        row.setQualityScore(qualityScore);
+        row.setEnrolledDeviceId(device.getId());
+        loginFingerprintRepository.save(row);
+    }
+
+    /** The sign-in fingers of the active Branch Manager / Back Office logins of this PC's branch. */
+    @Transactional(readOnly = true)
+    public List<FingerprintSyncResponse.StaffItem> loginFingerprintsForDevice(String deviceSerial) {
+        BiometricDevice device = deviceRepository.findByDeviceSerial(deviceSerial).orElse(null);
+        if (device == null || device.getBranchId() == null) {
+            return List.of();
+        }
+        Map<Long, User> logins = userRepository.findByBranchId(device.getBranchId()).stream()
+                .filter(user -> user.isActive() && !user.isDeleted() && LINKABLE_ROLES.contains(user.getRole()))
+                .collect(Collectors.toMap(User::getId, user -> user));
+        if (logins.isEmpty()) {
+            return List.of();
+        }
+        List<FingerprintSyncResponse.StaffItem> items = new ArrayList<>();
+        for (LoginFingerprint row : loginFingerprintRepository.findByUserIdIn(logins.keySet())) {
+            User user = logins.get(row.getUserId());
+            byte[] template = fingerprintCipher.decryptForLogin(row.getTemplateEncrypted(), row.getUserId());
+            items.add(new FingerprintSyncResponse.StaffItem(
+                    user.getId(), LOGIN_FINGER_PREFIX + user.getId(), user.getDisplayName(), user.getRole().name(),
+                    Base64.getEncoder().encodeToString(template), sha256(template)));
+        }
+        return items;
+    }
+
+    // Same rules as an employee-linked finger: an active PC of the login's own branch, an active login of the right
+    // role, and a sign-in finger registered for it. Audited the same way.
+    private AuthResponse signInWithLoginFinger(String deviceSerial, String terminalUserId, String requestedRole) {
+        Role wanted = null;
+        if (!"STAFF".equals(requestedRole)) {
+            try {
+                wanted = Role.valueOf(requestedRole);
+            } catch (IllegalArgumentException | NullPointerException e) {
+                throw new InvalidOperationException("Unknown role");
+            }
+        }
+
+        BiometricDevice device = deviceRepository.findByDeviceSerial(deviceSerial)
+                .filter(found -> "ACTIVE".equals(found.getStatus()))
+                .orElseThrow(() -> new InvalidOperationException("This PC's reader is not active"));
+
+        Long userId;
+        try {
+            userId = Long.valueOf(terminalUserId.substring(LOGIN_FINGER_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            throw new InvalidOperationException(notLinked(wanted));
+        }
+        final Role role = wanted;
+        User user = userRepository.findById(userId)
+                .filter(found -> found.isActive() && !found.isDeleted())
+                .filter(found -> role == null ? LINKABLE_ROLES.contains(found.getRole()) : found.getRole() == role)
+                .filter(found -> Objects.equals(found.getBranchId(), device.getBranchId()))
+                .filter(found -> loginFingerprintRepository.existsByUserId(found.getId()))
+                .orElseThrow(() -> new InvalidOperationException(
+                        "This fingerprint can't sign in at this branch. Sign in with your password."));
+
+        return authService.fingerprintLogin(user, deviceSerial);
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private static String notLinked(Role role) {

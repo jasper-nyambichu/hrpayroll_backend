@@ -1,4 +1,4 @@
--- V35__audit_details_as_text.sql  (STAGED: move into src/main/resources/db/migration only after a pg_dump backup,
+-- V37__audit_details_as_text.sql  (STAGED: move into src/main/resources/db/migration only after a pg_dump backup,
 -- together with the AuditLog entity change below)
 -- audit_logs.details_json was a PostgreSQL large object (OID, from V2): every row's JSON lived in
 -- pg_largeobject and had to be streamed one by one inside a transaction, which made the audit pages slow
@@ -27,7 +27,7 @@ ALTER TABLE audit_logs RENAME COLUMN details_text TO details_json;
 --     @Lob
 --     private String detailsJson;
 -- with
---     // Plain TEXT since V35 (it was a large object, slow to read row by row).
+--     // Plain TEXT since V37 (it was a large object, slow to read row by row).
 --     @Column(columnDefinition = "text")
 --     private String detailsJson;
 -- Tested 2026-11-09 on a copy of the local database: all 334 entries identical before and after (md5 of the

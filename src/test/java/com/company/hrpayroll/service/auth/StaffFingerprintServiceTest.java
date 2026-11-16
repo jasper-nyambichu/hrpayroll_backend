@@ -11,6 +11,9 @@ import com.company.hrpayroll.repository.attendance.BiometricDeviceRepository;
 import com.company.hrpayroll.repository.auth.UserRepository;
 import com.company.hrpayroll.repository.employee.EmployeeRepository;
 import com.company.hrpayroll.service.attendance.impl.TerminalIdentity;
+import com.company.hrpayroll.service.attendance.impl.FingerprintCipher;
+import com.company.hrpayroll.repository.auth.LoginFingerprintRepository;
+import com.company.hrpayroll.entity.auth.LoginFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,8 +41,10 @@ class StaffFingerprintServiceTest {
     private final BiometricDeviceRepository devices = mock(BiometricDeviceRepository.class);
     private final TerminalIdentity terminal = mock(TerminalIdentity.class);
     private final AuthService auth = mock(AuthService.class);
+    private final LoginFingerprintRepository loginFingers = mock(LoginFingerprintRepository.class);
+    private final FingerprintCipher cipher = new FingerprintCipher(java.util.Base64.getEncoder().encodeToString(new byte[32]));
     private final StaffFingerprintService service =
-            new StaffFingerprintService(users, employees, devices, terminal, new UserMapper(), auth);
+            new StaffFingerprintService(users, employees, devices, terminal, new UserMapper(), auth, loginFingers, cipher);
 
     private final AuthResponse session = mock(AuthResponse.class);
 
@@ -138,5 +143,69 @@ class StaffFingerprintServiceTest {
                 login(20L, Role.BRANCH_MANAGER, BRANCH, 5L), inactive, login(24L, Role.BACK_OFFICE, BRANCH, null)));
 
         assertEquals(Map.of(5L, "BRANCH_MANAGER"), service.staffRolesForDevice("PC-1"));
+    }
+
+    // ----- A login's own sign-in finger: a Branch Manager who is not an employee -----
+
+    @Test
+    void aManagerWhoIsNotAnEmployeeSignsInWithTheirOwnRegisteredFinger() {
+        User manager = login(30L, Role.BRANCH_MANAGER, BRANCH, null);
+        when(users.findById(30L)).thenReturn(Optional.of(manager));
+        when(loginFingers.existsByUserId(30L)).thenReturn(true);
+
+        assertSame(session, service.signIn("PC-1", "staff-30", "STAFF"));
+        verify(auth).fingerprintLogin(manager, "PC-1");
+    }
+
+    @Test
+    void aLoginFingerIsRefusedAtAnotherBranchWhenInactiveOrWhenNoneIsRegistered() {
+        User elsewhere = login(31L, Role.BRANCH_MANAGER, OTHER_BRANCH, null);
+        when(users.findById(31L)).thenReturn(Optional.of(elsewhere));
+        when(loginFingers.existsByUserId(31L)).thenReturn(true);
+        assertThrows(InvalidOperationException.class, () -> service.signIn("PC-1", "staff-31", "STAFF"));
+
+        User inactive = login(32L, Role.BRANCH_MANAGER, BRANCH, null);
+        inactive.setActive(false);
+        when(users.findById(32L)).thenReturn(Optional.of(inactive));
+        when(loginFingers.existsByUserId(32L)).thenReturn(true);
+        assertThrows(InvalidOperationException.class, () -> service.signIn("PC-1", "staff-32", "STAFF"));
+
+        User unregistered = login(33L, Role.BRANCH_MANAGER, BRANCH, null);
+        when(users.findById(33L)).thenReturn(Optional.of(unregistered));
+        assertThrows(InvalidOperationException.class, () -> service.signIn("PC-1", "staff-33", "STAFF"));
+
+        User admin = login(34L, Role.ADMIN, BRANCH, null);
+        when(users.findById(34L)).thenReturn(Optional.of(admin));
+        when(loginFingers.existsByUserId(34L)).thenReturn(true);
+        assertThrows(InvalidOperationException.class, () -> service.signIn("PC-1", "staff-34", "STAFF"));
+
+        verify(auth, never()).fingerprintLogin(any(), anyString());
+    }
+
+    @Test
+    void aManagerRegistersTheirOwnFingerOnlyOnTheirBranchesPcAndItReachesThatPc() {
+        User manager = login(30L, Role.BRANCH_MANAGER, BRANCH, null);
+        manager.setDisplayName("Branch Manager");
+        byte[] template = {1, 2, 3, 4};
+        String data = java.util.Base64.getEncoder().encodeToString(template);
+        when(loginFingers.findByUserId(30L)).thenReturn(Optional.empty());
+
+        service.saveOwnLoginFingerprint(manager, "PC-1", data, 80);
+        var saved = org.mockito.ArgumentCaptor.forClass(LoginFingerprint.class);
+        verify(loginFingers).save(saved.capture());
+        assertEquals(30L, saved.getValue().getUserId());
+
+        // Another branch's manager cannot register on this PC.
+        User other = login(40L, Role.BRANCH_MANAGER, OTHER_BRANCH, null);
+        assertThrows(InvalidOperationException.class, () -> service.saveOwnLoginFingerprint(other, "PC-1", data, 80));
+
+        // The PC of the branch receives it, decrypted, under "staff-30".
+        when(users.findByBranchId(BRANCH)).thenReturn(List.of(manager));
+        when(loginFingers.findByUserIdIn(any())).thenReturn(List.of(saved.getValue()));
+        var items = service.loginFingerprintsForDevice("PC-1");
+        assertEquals(1, items.size());
+        assertEquals("staff-30", items.get(0).terminalUserId());
+        assertEquals(data, items.get(0).templateData());
+        assertEquals("BRANCH_MANAGER", items.get(0).role());
     }
 }

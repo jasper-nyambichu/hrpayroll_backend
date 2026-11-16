@@ -106,7 +106,9 @@ public class BiometricSyncController {
     @GetMapping("/fingerprints")
     public ApiResponse<FingerprintSyncResponse> getFingerprintsForMyBranch(HttpServletRequest httpRequest) {
         String deviceSerial = (String) httpRequest.getAttribute(DeviceAuthFilter.DEVICE_SERIAL_ATTRIBUTE);
-        return ApiResponse.success(biometricEnrollmentService.getFingerprintsForDevice(deviceSerial));
+        // Plus the sign-in fingers of the branch's Branch Manager / Back Office logins (not attendance).
+        return ApiResponse.success(biometricEnrollmentService.getFingerprintsForDevice(deviceSerial)
+                .withStaffTemplates(staffFingerprintService.loginFingerprintsForDevice(deviceSerial)));
     }
 
     // Pulled by the desktop application: damages waiting for a fingerprint from someone enrolled on
