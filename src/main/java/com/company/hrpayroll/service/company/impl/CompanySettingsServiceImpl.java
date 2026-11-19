@@ -77,6 +77,15 @@ public class CompanySettingsServiceImpl implements CompanySettingsService {
             throw new InvalidOperationException("Daily rate is too large");
         }
 
+        // Both times are sent together by the Settings screen; one alone is checked against the saved other.
+        java.time.LocalTime start = request.workStartTime() != null ? request.workStartTime()
+                : companySettingsRepository.findAll().stream().findFirst().map(CompanySettings::getWorkStartTime).orElse(null);
+        java.time.LocalTime end = request.workEndTime() != null ? request.workEndTime()
+                : companySettingsRepository.findAll().stream().findFirst().map(CompanySettings::getWorkEndTime).orElse(null);
+        if (start != null && end != null && !end.isAfter(start)) {
+            throw new InvalidOperationException("Work must end after it starts");
+        }
+
         String shifMode = normalizeMode(request.shifMode(), "SHIF");
         String nssfMode = normalizeMode(request.nssfMode(), "NSSF");
         checkContribution("SHIF", request.shifValue(), shifMode != null ? shifMode : savedMode(true));
@@ -96,7 +105,9 @@ public class CompanySettingsServiceImpl implements CompanySettingsService {
                 request.applyHousingLevy(),
                 request.applyPaye(),
                 request.applyNita(),
-                request.deductionCeilingPercent()
+                request.deductionCeilingPercent(),
+                request.workStartTime(),
+                request.workEndTime()
         );
     }
 

@@ -18,6 +18,9 @@ public interface OffDayRepository extends JpaRepository<OffDay, Long> {
     List<OffDay> findByAgentIdAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(
             Long agentId, LocalDate rangeEnd, LocalDate rangeStart);
 
+    List<OffDay> findByEmployeeIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+            Long employeeId, LocalDate rangeEnd, LocalDate rangeStart);
+
     boolean existsByEmployeeIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
             Long employeeId, LocalDate rangeEnd, LocalDate rangeStart);
 }

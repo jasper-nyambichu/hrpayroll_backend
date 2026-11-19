@@ -158,6 +158,10 @@ public class AccessGuard {
         return currentUser().getRole() == Role.BACK_OFFICE;
     }
 
+    public Role currentRole() {
+        return currentUser().getRole();
+    }
+
     public Long currentBranchId() {
         return currentUser().getBranchId();
     }

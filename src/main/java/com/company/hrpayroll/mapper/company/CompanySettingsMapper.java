@@ -50,6 +50,12 @@ public class CompanySettingsMapper {
         if (dto.deductionCeilingPercent() != null) {
             settings.setDeductionCeilingPercent(dto.deductionCeilingPercent());
         }
+        if (dto.workStartTime() != null) {
+            settings.setWorkStartTime(dto.workStartTime());
+        }
+        if (dto.workEndTime() != null) {
+            settings.setWorkEndTime(dto.workEndTime());
+        }
     }
 
     public CompanySettingsResponse toCompanySettingsResponse(CompanySettings settings) {
@@ -68,7 +74,9 @@ public class CompanySettingsMapper {
                 settings.isApplyHousingLevy(),
                 settings.isApplyPaye(),
                 settings.isApplyNita(),
-                settings.getDeductionCeilingPercent()
+                settings.getDeductionCeilingPercent(),
+                settings.getWorkStartTime(),
+                settings.getWorkEndTime()
         );
     }
 }

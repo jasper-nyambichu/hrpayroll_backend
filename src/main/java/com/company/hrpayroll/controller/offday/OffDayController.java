@@ -3,6 +3,7 @@ package com.company.hrpayroll.controller.offday;
 
 import com.company.hrpayroll.audit.Auditable;
 import com.company.hrpayroll.dto.request.offday.OffDayRequest;
+import com.company.hrpayroll.dto.request.offday.OffDayUpdateRequest;
 import com.company.hrpayroll.dto.response.ApiResponse;
 import com.company.hrpayroll.dto.response.offday.OffDayResponse;
 import com.company.hrpayroll.security.AccessGuard;
@@ -16,27 +17,42 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 
-// The agent is the one who gives employees time off. The Admin only reads it.
+// The agent gives their employees days off (at most 2 single days a month). When the agent isn't available, the
+// Branch Manager (own branch) or the Admin (anyone) can give, change or remove them too.
 @RestController
 @RequestMapping("/off-days")
 @RequiredArgsConstructor
 public class OffDayController {
 
+    private static final String MANAGERS = "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BRANCH_MANAGER', 'AGENT')";
+
     private final OffDayService offDayService;
     private final AccessGuard accessGuard;
 
+    private OffDayService.Actor actor() {
+        return new OffDayService.Actor(accessGuard.currentRole(), accessGuard.currentAgentId(), accessGuard.currentBranchId());
+    }
+
     @PostMapping
-    @PreAuthorize("hasRole('AGENT')")
+    @PreAuthorize(MANAGERS)
     @Auditable(action = "OFF_DAY_GRANTED", entityType = "OffDay")
-    public ApiResponse<OffDayResponse> grant(@Valid @RequestBody OffDayRequest request) {
-        return ApiResponse.success("Off day saved", offDayService.grant(accessGuard.currentAgentId(), request));
+    public ApiResponse<List<OffDayResponse>> grant(@Valid @RequestBody OffDayRequest request) {
+        List<OffDayResponse> saved = offDayService.grant(actor(), request);
+        return ApiResponse.success(saved.size() == 1 ? "Off day saved" : "Off days saved", saved);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize(MANAGERS)
+    @Auditable(action = "OFF_DAY_CHANGED", entityType = "OffDay")
+    public ApiResponse<OffDayResponse> update(@PathVariable Long id, @Valid @RequestBody OffDayUpdateRequest request) {
+        return ApiResponse.success("Off day changed", offDayService.update(actor(), id, request));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('AGENT')")
+    @PreAuthorize(MANAGERS)
     @Auditable(action = "OFF_DAY_REMOVED", entityType = "OffDay")
     public ApiResponse<Void> remove(@PathVariable Long id) {
-        offDayService.remove(accessGuard.currentAgentId(), id);
+        offDayService.remove(actor(), id);
         return ApiResponse.success("Off day removed", null);
     }
 

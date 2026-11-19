@@ -83,4 +83,14 @@ public class CompanySettings extends BaseEntity {
     @Builder.Default
     @Column(nullable = false, precision = 5, scale = 2)
     private BigDecimal deductionCeilingPercent = new BigDecimal("66.67");
+
+    // ---- Work time: an arrival after workStartTime is late; leaving before workEndTime is early ----
+
+    @Builder.Default
+    @Column(nullable = false)
+    private java.time.LocalTime workStartTime = java.time.LocalTime.of(8, 0);
+
+    @Builder.Default
+    @Column(nullable = false)
+    private java.time.LocalTime workEndTime = java.time.LocalTime.of(17, 0);
 }

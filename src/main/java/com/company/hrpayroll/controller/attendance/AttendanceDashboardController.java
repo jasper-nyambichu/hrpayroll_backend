@@ -30,6 +30,7 @@ public class AttendanceDashboardController {
 
     private final AttendanceDashboardService dashboardService;
     private final AccessGuard accessGuard;
+    private final com.company.hrpayroll.service.attendance.impl.PunctualityService punctualityService;
 
     // The figures on the agent's dashboard, for their own employees only.
     @GetMapping("/my-agent-today")
@@ -68,6 +69,29 @@ public class AttendanceDashboardController {
             @RequestParam(defaultValue = "25") int size
     ) {
         return ApiResponse.success(dashboardService.records(branchId, start, end, openOnly, page, size));
+    }
+
+    // Each employee's attendance record over a period: days reported, arrivals against the work start, early
+    // departures, late lunch returns. With employeeId, one employee with a line per day.
+    @GetMapping("/punctuality")
+    @PreAuthorize(VIEW_ROLES)
+    public ApiResponse<com.company.hrpayroll.dto.response.attendance.PunctualityDtos.PunctualityReport> punctuality(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) Long employeeId
+    ) {
+        return ApiResponse.success(punctualityService.report(start, end, branchId, employeeId));
+    }
+
+    // Who came back late from lunch on a day (today by default), and anyone still out past the end of lunch.
+    @GetMapping("/late-lunch")
+    @PreAuthorize(VIEW_ROLES)
+    public ApiResponse<List<com.company.hrpayroll.dto.response.attendance.PunctualityDtos.LateLunch>> lateLunch(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ApiResponse.success(punctualityService.lateLunches(date, branchId));
     }
 
     @GetMapping("/devices")

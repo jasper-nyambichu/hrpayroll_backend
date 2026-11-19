@@ -26,5 +26,7 @@ public record CompanySettingsUpdateRequest(
         Boolean applyPaye,
         Boolean applyNita,
         @DecimalMin(value = "1.0", message = "Deduction ceiling must be at least 1%")
-        @DecimalMax(value = "100.0", message = "Deduction ceiling cannot exceed 100%") BigDecimal deductionCeilingPercent
+        @DecimalMax(value = "100.0", message = "Deduction ceiling cannot exceed 100%") BigDecimal deductionCeilingPercent,
+        java.time.LocalTime workStartTime,
+        java.time.LocalTime workEndTime
 ) {}

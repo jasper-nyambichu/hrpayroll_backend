@@ -18,5 +18,7 @@ public record CompanySettingsResponse(
         boolean applyHousingLevy,
         boolean applyPaye,
         boolean applyNita,
-        BigDecimal deductionCeilingPercent
+        BigDecimal deductionCeilingPercent,
+        java.time.LocalTime workStartTime,
+        java.time.LocalTime workEndTime
 ) {}
