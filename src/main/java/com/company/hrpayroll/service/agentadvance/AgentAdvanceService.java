@@ -26,5 +26,12 @@ public interface AgentAdvanceService {
 
     // Called by payroll/agentformula during a payroll run — not exposed via a controller.
     BigDecimal getRecoverableBalanceForAgent(Long agentId);
-    void recoverForPayrollRun(Long agentId, BigDecimal amountToRecover);
+    /** What a payment run would take back from each advance, oldest first. Changes nothing. */
+    List<AdvanceRecovery> planRecovery(Long agentId, BigDecimal amountToRecover);
+
+    /** Takes it back (oldest advance first) and says how much came from each advance. */
+    List<AdvanceRecovery> recoverForPayrollRun(Long agentId, BigDecimal amountToRecover);
+
+    /** One advance's share of a recovery, and what is still owed on it afterwards. */
+    record AdvanceRecovery(Long advanceId, BigDecimal amount, BigDecimal balanceAfter) {}
 }

@@ -168,21 +168,30 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
     }
 
     @Override
-    public void recoverForPayrollRun(Long agentId, BigDecimal amountToRecover) {
-        // Recovers from the oldest outstanding advances first, spilling into
-        // the next one if a single advance doesn't cover the full amount.
+    public List<AdvanceRecovery> planRecovery(Long agentId, BigDecimal amountToRecover) {
+        // Oldest outstanding advance first, spilling into the next one if it doesn't cover the amount.
         BigDecimal remaining = amountToRecover;
-
-        List<AgentAdvance> recoverable = agentAdvanceRepository.findRecoverableByAgentId(agentId);
-        for (AgentAdvance advance : recoverable) {
+        List<AdvanceRecovery> plan = new java.util.ArrayList<>();
+        for (AgentAdvance advance : agentAdvanceRepository.findRecoverableByAgentId(agentId)) {
             if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
                 break;
             }
-            BigDecimal amountFromThisAdvance = remaining.min(advance.getOutstandingBalance());
-            applyRecovery(advance, amountFromThisAdvance);
-            agentAdvanceRepository.save(advance);
-            remaining = remaining.subtract(amountFromThisAdvance);
+            BigDecimal amount = remaining.min(advance.getOutstandingBalance());
+            plan.add(new AdvanceRecovery(advance.getId(), amount, advance.getOutstandingBalance().subtract(amount)));
+            remaining = remaining.subtract(amount);
         }
+        return plan;
+    }
+
+    @Override
+    public List<AdvanceRecovery> recoverForPayrollRun(Long agentId, BigDecimal amountToRecover) {
+        List<AdvanceRecovery> plan = planRecovery(agentId, amountToRecover);
+        for (AdvanceRecovery step : plan) {
+            AgentAdvance advance = agentAdvanceRepository.findById(step.advanceId()).orElseThrow();
+            applyRecovery(advance, step.amount());
+            agentAdvanceRepository.save(advance);
+        }
+        return plan;
     }
 
     private void applyRecovery(AgentAdvance advance, BigDecimal amountToRecover) {

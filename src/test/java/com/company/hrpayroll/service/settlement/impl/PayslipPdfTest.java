@@ -24,14 +24,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class PayslipPdfTest {
 
+    // A payslip from before salaries were used: kept in the layout it was made with.
     private static PayslipResponse payslip(String name, List<PayslipResponse.RecordedPayment> payments) {
+        return payslip(name, payments, "DAILY_RATE");
+    }
+
+    private static PayslipResponse payslip(String name, List<PayslipResponse.RecordedPayment> payments, String basis) {
         return new PayslipResponse(
                 1L, 1L, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30), 1L, "EMP-0009", name, "Kisii Matt Main Branch", "Test Agent Ltd",
                 26, new BigDecimal("1000.00"), new BigDecimal("26000.00"), new BigDecimal("1200.00"), new BigDecimal("1560.00"),
                 new BigDecimal("150.00"), new BigDecimal("2000.00"), new BigDecimal("500.00"), new BigDecimal("26410.00"),
                 new BigDecimal("10000.00"), new BigDecimal("16410.00"), payments,
                 List.of(new PayslipResponse.DeductionItem(3L, "Loan #3 instalment", null, new BigDecimal("2000.00"))),
-                List.of(new PayslipResponse.DeductionItem(7L, "Damage: Broken display unit", LocalDate.of(2026, 11, 12), new BigDecimal("500.00"))));
+                List.of(new PayslipResponse.DeductionItem(7L, "Damage: Broken display unit", LocalDate.of(2026, 11, 12), new BigDecimal("500.00"))),
+                basis, new BigDecimal("30000.00"), 2, new BigDecimal("23500.00"));
+    }
+
+    @Test
+    void aSalaryPayslipShowsSalaryDeductionsAndNetPayOnly() throws IOException {
+        String text = text(render(payslip("Asha Wanjiru", List.of(), "SALARY"), null));
+        assertThat(text).contains("Monthly salary", "30,000.00", "26 worked + 2 off", "-2,000.00", "-500.00", "NET PAY", "KES 23,500.00")
+                .doesNotContain("PAYE", "NSSF", "NITA", "SHIF");
     }
 
     private static byte[] logo(int width, int height) throws IOException {

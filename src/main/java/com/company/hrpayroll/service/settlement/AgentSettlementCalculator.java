@@ -18,7 +18,8 @@ import java.util.List;
 /**
  * The payment formula, and nothing else — no database and no state changes:
  *
- *   subtotal = (days worked x daily rate) + PAYE + NSSF + NITA + agent fee
+ *   pay      = employee's monthly salary / days in the month x days paid (days worked + off days)
+ *   subtotal = pay + PAYE + NSSF + NITA + agent fee
  *   VAT      = subtotal x VAT rate
  *   payable  = subtotal + VAT - loans - damages - advances
  *
@@ -36,6 +37,9 @@ public class AgentSettlementCalculator {
     /** One employee's share of the settlement, with the loans and damages it actually took. */
     public record EmployeeLine(
             int daysWorked,
+            int offDaysPaid,
+            BigDecimal monthlySalary,
+            BigDecimal dailyRate,
             BigDecimal pay,
             BigDecimal paye,
             BigDecimal nssf,
@@ -53,9 +57,14 @@ public class AgentSettlementCalculator {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
 
-        // What the employee is paid. The agent's amount is the sum of these + agent fee + VAT - advances.
+        // The employee's net pay: their pay less the loans and damages taken. PAYE, NSSF and NITA are not part of
+        // it; they are added to the agent's invoice (with the agent fee and VAT), and the agent pays them over.
         public BigDecimal amountDue() {
-            return pay.add(paye).add(nssf).add(nita).subtract(loanTotal()).subtract(damageTotal()).max(BigDecimal.ZERO);
+            return pay.subtract(loanTotal()).subtract(damageTotal()).max(BigDecimal.ZERO);
+        }
+
+        public int daysPaid() {
+            return daysWorked + offDaysPaid;
         }
     }
 
@@ -76,17 +85,32 @@ public class AgentSettlementCalculator {
 
     // Loans and damages share the deduction ceiling, loans first. A damage is taken whole or not at
     // all: one that does not fit waits for the next period.
+    //
+    // Pay is the employee's own monthly salary (recorded when they were added), for the days paid: the days they
+    // worked plus their off days, never more than the days in the period. A whole month at work pays the whole
+    // salary; an employee without a recorded salary is paid nothing and the preview says so.
     public EmployeeLine calculateEmployee(
             CompanySettings settings,
+            BigDecimal monthlySalary,
             int daysWorked,
+            int offDaysPaid,
+            int daysInMonth,
+            int periodDays,
             List<LoanService.LoanDeductionResult> dueLoans,
             List<DamageService.DamageDeductionResult> approvedDamages
     ) {
-        BigDecimal pay = settings.getDailyRate().multiply(BigDecimal.valueOf(daysWorked)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal salary = monthlySalary != null ? monthlySalary : BigDecimal.ZERO;
+        int worked = Math.min(daysWorked, periodDays);
+        int off = Math.max(0, Math.min(offDaysPaid, periodDays - worked));
+        BigDecimal dailyRate = salary.divide(BigDecimal.valueOf(Math.max(daysInMonth, 1)), 2, RoundingMode.HALF_UP);
+        BigDecimal pay = (worked + off) >= daysInMonth
+                ? salary.setScale(2, RoundingMode.HALF_UP)
+                : salary.multiply(BigDecimal.valueOf(worked + off))
+                        .divide(BigDecimal.valueOf(Math.max(daysInMonth, 1)), 2, RoundingMode.HALF_UP);
 
         BigDecimal nssf = statutoryDeductionCalculator.calculateConfigured(pay, settings.getNssfMode(), settings.getNssfValue());
         BigDecimal paye = statutoryDeductionCalculator.calculatePaye(pay, nssf, BigDecimal.ZERO, BigDecimal.ZERO);
-        BigDecimal nita = daysWorked > 0 ? statutoryDeductionCalculator.calculateNita() : BigDecimal.ZERO;
+        BigDecimal nita = pay.compareTo(BigDecimal.ZERO) > 0 ? statutoryDeductionCalculator.calculateNita() : BigDecimal.ZERO;
 
         BigDecimal remaining = pay.multiply(settings.getDeductionCeilingPercent()).divide(HUNDRED, 2, RoundingMode.HALF_UP);
 
@@ -112,7 +136,7 @@ public class AgentSettlementCalculator {
             remaining = remaining.subtract(damage.amount());
         }
 
-        return new EmployeeLine(daysWorked, pay, paye, nssf, nita, loans, damages);
+        return new EmployeeLine(worked, off, salary, dailyRate, pay, paye, nssf, nita, loans, damages);
     }
 
     public Totals calculateTotals(Agent agent, List<EmployeeLine> lines, BigDecimal vatRate, BigDecimal advanceBalance) {

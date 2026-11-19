@@ -28,7 +28,8 @@ public class AgentSettlementMapper {
                 settlement.getDamageTotal(),
                 settlement.getAdvanceRecovered(),
                 settlement.getAmountPayable(),
-                settlement.getPaymentRequestId()
+                settlement.getPaymentRequestId(),
+                settlement.getPayBasis()
         );
     }
 }

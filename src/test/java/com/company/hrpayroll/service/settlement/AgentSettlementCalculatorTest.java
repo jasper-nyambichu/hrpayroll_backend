@@ -29,14 +29,21 @@ class AgentSettlementCalculatorTest {
         return Agent.builder().name("Agent").chargeType(ChargeType.PER_EMPLOYEE).chargeAmount(kes(perEmployee)).build();
     }
 
-    // Default settings: 1,000 a day, NSSF 6% of pay, 66.67% deduction ceiling.
+    // Default settings: NSSF 6% of pay, 66.67% deduction ceiling.
     private static CompanySettings settings() {
         return CompanySettings.builder().build();
     }
 
+    // An employee on a monthly salary, in a 30-day month paid as one period.
+    private AgentSettlementCalculator.EmployeeLine line(String salary, int worked, int off,
+                                                        List<LoanService.LoanDeductionResult> loans,
+                                                        List<DamageService.DamageDeductionResult> damages) {
+        return calculator.calculateEmployee(settings(), salary == null ? null : kes(salary), worked, off, 30, 30, loans, damages);
+    }
+
     @Test
-    void oneEmployeeForThirtyDaysFollowsTheFormula() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(settings(), 30, List.of(), List.of());
+    void aFullMonthPaysTheWholeSalaryAndFollowsTheFormula() {
+        AgentSettlementCalculator.EmployeeLine line = line("30000", 30, 0, List.of(), List.of());
 
         assertKes("30000.00", line.pay());
         assertKes("1800.00", line.nssf());
@@ -53,10 +60,33 @@ class AgentSettlementCalculatorTest {
     }
 
     @Test
+    void eachEmployeesOwnSalaryIsProratedByTheDaysPaidOffDaysIncluded() {
+        // 45,000 a month; worked 25 days and had 2 off days in a 30-day month: 27 days -> 40,500.
+        AgentSettlementCalculator.EmployeeLine line = line("45000", 25, 2, List.of(), List.of());
+        assertKes("40500.00", line.pay());
+        assertKes("1500.00", line.dailyRate());
+        assertEquals(27, line.daysPaid());
+
+        // Someone else on 18,000 for the same days is paid from their own salary.
+        assertKes("16200.00", line("18000", 25, 2, List.of(), List.of()).pay());
+    }
+
+    @Test
+    void aWholeLongMonthStillPaysExactlyTheSalary() {
+        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(settings(), kes("31000"), 31, 0, 31, 31, List.of(), List.of());
+        assertKes("31000.00", line.pay());
+    }
+
+    @Test
+    void anEmployeeWithoutASalaryIsPaidNothing() {
+        AgentSettlementCalculator.EmployeeLine line = line(null, 30, 0, List.of(), List.of());
+        assertKes("0", line.pay());
+        assertKes("0", line.nita());
+    }
+
+    @Test
     void vatIsChargedBeforeLoansDamagesAndAdvancesComeOff() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(
-                settings(),
-                30,
+        AgentSettlementCalculator.EmployeeLine line = line("30000", 30, 0,
                 List.of(new LoanService.LoanDeductionResult(1L, 1L, kes("2000"))),
                 List.of(new DamageService.DamageDeductionResult(1L, 1L, kes("1000"))));
 
@@ -73,62 +103,45 @@ class AgentSettlementCalculatorTest {
 
     @Test
     void anAdvanceLargerThanThePaymentStopsAtZeroAndTheRestCarriesOver() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(settings(), 30, List.of(), List.of());
-
         AgentSettlementCalculator.Totals totals =
-                calculator.calculateTotals(agentCharging("500"), List.of(line), kes("16"), kes("50000"));
+                calculator.calculateTotals(agentCharging("500"), List.of(line("30000", 30, 0, List.of(), List.of())), kes("16"), kes("50000"));
 
         assertKes("38744.00", totals.advance());
         assertKes("0.00", totals.payable());
     }
 
     @Test
-    void thePayslipIsPayPlusStatutoryLessLoansAndDamages() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(
-                settings(),
-                30,
+    void theNetPayIsTheSalaryLessLoansAndDamagesOnly() {
+        AgentSettlementCalculator.EmployeeLine line = line("30000", 30, 0,
                 List.of(new LoanService.LoanDeductionResult(1L, 1L, kes("2000"))),
-                List.of());
+                List.of(new DamageService.DamageDeductionResult(1L, 1L, kes("500"))));
 
-        // 30,000 + 1,050 + 1,800 + 50 - 2,000
-        assertKes("30900.00", line.amountDue());
+        // 30,000 - 2,000 - 500: PAYE, NSSF and NITA are on the agent's invoice, not the employee's net pay.
+        assertKes("27500.00", line.amountDue());
     }
 
     @Test
-    void theAgentsAmountIsThePayslipsPlusFeeAndVatLessAdvances() {
+    void theAgentsAmountIsNetPaysPlusStatutoryFeeAndVatLessAdvances() {
         List<AgentSettlementCalculator.EmployeeLine> lines = List.of(
-                calculator.calculateEmployee(settings(), 30, List.of(new LoanService.LoanDeductionResult(1L, 1L, kes("2000"))), List.of()),
-                calculator.calculateEmployee(settings(), 20, List.of(), List.of(new DamageService.DamageDeductionResult(1L, 2L, kes("500")))));
+                line("30000", 30, 0, List.of(new LoanService.LoanDeductionResult(1L, 1L, kes("2000"))), List.of()),
+                line("24000", 20, 0, List.of(), List.of(new DamageService.DamageDeductionResult(1L, 2L, kes("500")))));
 
         AgentSettlementCalculator.Totals totals =
                 calculator.calculateTotals(agentCharging("500"), lines, kes("16"), kes("1000"));
 
-        BigDecimal payslips = lines.stream()
-                .map(AgentSettlementCalculator.EmployeeLine::amountDue)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        assertEquals(0, payslips.add(totals.agentFee()).add(totals.vat()).subtract(totals.advance()).compareTo(totals.payable()));
-    }
-
-    @Test
-    void noDaysWorkedChargesNothingForThatEmployee() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(settings(), 0, List.of(), List.of());
-
-        assertKes("0", line.pay());
-        assertKes("0", line.paye());
-        assertKes("0", line.nssf());
-        assertKes("0", line.nita());
+        BigDecimal netPays = lines.stream().map(AgentSettlementCalculator.EmployeeLine::amountDue).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal expected = netPays.add(totals.paye()).add(totals.nssf()).add(totals.nita())
+                .add(totals.agentFee()).add(totals.vat()).subtract(totals.advance());
+        assertEquals(0, expected.compareTo(totals.payable()));
     }
 
     @Test
     void loansAreCappedAndADamageThatDoesNotFitWaits() {
-        AgentSettlementCalculator.EmployeeLine line = calculator.calculateEmployee(
-                settings(),
-                10,
+        AgentSettlementCalculator.EmployeeLine line = line("30000", 10, 0,
                 List.of(new LoanService.LoanDeductionResult(1L, 1L, kes("9000"))),
                 List.of(new DamageService.DamageDeductionResult(1L, 1L, kes("500"))));
 
-        // Ceiling is 66.67% of 10,000 = 6,667: the loan takes it all, so the damage waits.
+        // Pay 10,000; the ceiling is 66.67% of it = 6,667: the loan takes it all, so the damage waits.
         assertKes("6667.00", line.loanTotal());
         assertTrue(line.damages().isEmpty());
     }

@@ -53,4 +53,13 @@ public class EmployeePayslip extends BaseEntity {
 
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amountDue;
+
+    // The employee's monthly salary when the run was made (null on runs paid by the daily rate).
+    @Column(precision = 15, scale = 2)
+    private BigDecimal monthlySalary;
+
+    // Off days in the period without a clock-in: paid like days worked.
+    @Builder.Default
+    @Column(nullable = false)
+    private Integer offDaysPaid = 0;
 }

@@ -31,7 +31,11 @@ public record PayslipResponse(
         BigDecimal amountNotRecorded,
         List<RecordedPayment> payments,
         List<DeductionItem> loanItems,
-        List<DeductionItem> damageItems
+        List<DeductionItem> damageItems,
+        String payBasis,            // SALARY (salary for the days paid), or DAILY_RATE for runs made before
+        BigDecimal monthlySalary,   // SALARY payslips: the employee's monthly salary at the time
+        Integer offDaysPaid,
+        BigDecimal netPay           // what the employee receives: pay - loans - damages
 ) {
     public record RecordedPayment(String mpesaCode, BigDecimal amount, LocalDate paidOn) {}
 

@@ -105,6 +105,12 @@ public class PayslipServiceImpl implements PayslipService {
     }
 
     static void writePayslip(PdfDocumentWriter writer, PayslipResponse payslip, PdfDocumentWriter.Letterhead company) throws IOException {
+        if (AgentSettlement.BASIS_SALARY.equals(payslip.payBasis())) {
+            writeSalaryPayslip(writer, payslip, company);
+            return;
+        }
+        // A payslip from a run made before salaries were used keeps the layout it was made with.
+
         writer.documentHeader(
                 "Payslip",
                 List.of(new PdfDocumentWriter.Field("Pay Period", DateLabel.range(payslip.periodStart(), payslip.periodEnd()))),
@@ -146,6 +152,66 @@ public class PayslipServiceImpl implements PayslipService {
 
         writer.netBar("Amount Paid to the Agent", "KES " + format(payslip.amountDue()));
         writer.note("Includes PAYE, NSSF and NITA, which the agent deducts and pays to the government.");
+
+        if (!payslip.payments().isEmpty()) {
+            writer.sectionHeading("Payments Recorded by the Agent");
+            writer.tableRow(PAYMENT_COLUMNS, List.of("Date", "M-Pesa Code", "Amount (KES)"), true);
+            for (PayslipResponse.RecordedPayment payment : payslip.payments()) {
+                writer.tableRow(PAYMENT_COLUMNS, List.of(DateLabel.format(payment.paidOn()), payment.mpesaCode(), format(payment.amount())), false);
+            }
+        }
+
+        writer.signatureBlock(
+                "Payment Details:",
+                List.of(
+                        "Method: M-Pesa",
+                        "Recorded: KES " + format(payslip.amountRecorded()),
+                        "Not yet recorded: KES " + format(payslip.amountNotRecorded())),
+                "Administrator",
+                orDash(payslip.employeeName()));
+    }
+
+    // The employee's pay for the period from their salary, the loans and damages taken (with a minus), and their net
+    // pay. PAYE, NSSF and NITA are not on the payslip: they are part of what the agent is paid on the invoice.
+    private static void writeSalaryPayslip(PdfDocumentWriter writer, PayslipResponse payslip, PdfDocumentWriter.Letterhead company) throws IOException {
+        int off = payslip.offDaysPaid() != null ? payslip.offDaysPaid() : 0;
+        writer.documentHeader(
+                "Payslip",
+                List.of(new PdfDocumentWriter.Field("Pay Period", DateLabel.range(payslip.periodStart(), payslip.periodEnd()))),
+                company,
+                List.of(
+                        new PdfDocumentWriter.Field("Employee Name", orDash(payslip.employeeName())),
+                        new PdfDocumentWriter.Field("Employee No", orDash(payslip.employeeNumber())),
+                        new PdfDocumentWriter.Field("Branch", orDash(payslip.branchName())),
+                        new PdfDocumentWriter.Field("Agent", orDash(payslip.agentName())),
+                        new PdfDocumentWriter.Field("Days Paid", payslip.daysWorked() + (off > 0 ? " worked + " + off + " off" : " worked"))));
+
+        writer.sectionTitle("Salary");
+        writer.moneyHeader("Amount (KES)");
+        writer.moneyRow(1, "Monthly salary", format(payslip.monthlySalary() != null ? payslip.monthlySalary() : BigDecimal.ZERO));
+        writer.moneyRow(2, "Salary for " + (payslip.daysWorked() + off) + " days paid", format(payslip.pay()));
+        writer.moneyTotal("Salary to Be Paid", "KES " + format(payslip.pay()));
+
+        writer.sectionTitle("Deductions");
+        int row = 1;
+        if (payslip.loanItems().isEmpty()) {
+            writer.moneyRow(row++, "Loans", AgentSettlementServiceImpl.minus(payslip.loan()));
+        } else {
+            for (PayslipResponse.DeductionItem item : payslip.loanItems()) {
+                writer.moneyRow(row++, item.label(), AgentSettlementServiceImpl.minus(item.amount()));
+            }
+        }
+        if (payslip.damageItems().isEmpty()) {
+            writer.moneyRow(row, "Damages", AgentSettlementServiceImpl.minus(payslip.damage()));
+        } else {
+            for (PayslipResponse.DeductionItem item : payslip.damageItems()) {
+                String when = item.date() != null ? " (" + DateLabel.format(item.date()) + ")" : "";
+                writer.moneyRow(row++, item.label() + when, AgentSettlementServiceImpl.minus(item.amount()));
+            }
+        }
+        writer.moneyTotal("Total Deductions", "KES " + AgentSettlementServiceImpl.minus(payslip.loan().add(payslip.damage())));
+
+        writer.netBar("Net Pay", "KES " + format(payslip.netPay()));
 
         if (!payslip.payments().isEmpty()) {
             writer.sectionHeading("Payments Recorded by the Agent");
@@ -265,7 +331,11 @@ public class PayslipServiceImpl implements PayslipService {
                         .map(payment -> new PayslipResponse.RecordedPayment(payment.getMpesaCode(), payment.getAmount(), payment.getPaidOn()))
                         .toList(),
                 loanItems,
-                damageItems
+                damageItems,
+                settlement.getPayBasis(),
+                payslip.getMonthlySalary(),
+                payslip.getOffDaysPaid() != null ? payslip.getOffDaysPaid() : 0,
+                payslip.getPay().subtract(payslip.getLoan()).subtract(payslip.getDamage()).max(BigDecimal.ZERO)
         );
     }
 

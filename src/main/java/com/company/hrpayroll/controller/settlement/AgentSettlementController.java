@@ -38,6 +38,22 @@ public class AgentSettlementController {
         return ApiResponse.success("Agent payments calculated", settlementService.calculate(request, accessGuard.currentUserId()));
     }
 
+    // A dry run of the calculation: every agent's amount and every employee's line, nothing saved or deducted, and
+    // nothing an agent can see. The Admin runs the period only once satisfied with it.
+    @PostMapping("/preview")
+    @PreAuthorize(ADMIN_ROLES)
+    public ApiResponse<List<com.company.hrpayroll.dto.response.settlement.AgentPaymentDetail>> preview(
+            @Valid @RequestBody AgentSettlementRunRequest request) {
+        return ApiResponse.success(settlementService.preview(request));
+    }
+
+    // One payment line by line (employees, deductions, each advance with its dates). Admin, or the agent paid.
+    @GetMapping("/{settlementId}/detail")
+    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
+    public ApiResponse<com.company.hrpayroll.dto.response.settlement.AgentPaymentDetail> getDetail(@PathVariable Long settlementId) {
+        return ApiResponse.success(settlementService.getDetail(settlementId));
+    }
+
     // What still stands between this period and a calculation. Changes nothing.
     @GetMapping("/readiness")
     @PreAuthorize(ADMIN_ROLES)

@@ -23,5 +23,6 @@ public record AgentSettlementResponse(
         BigDecimal damageTotal,
         BigDecimal advanceRecovered,
         BigDecimal amountPayable,
-        Long paymentRequestId
+        Long paymentRequestId,
+        String payBasis        // SALARY, or DAILY_RATE for runs made before salaries were used
 ) {}

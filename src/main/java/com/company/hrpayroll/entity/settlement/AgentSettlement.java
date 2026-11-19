@@ -13,7 +13,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 // What one agent is paid for one period. The agent pays their own employees from this amount:
-// (days worked x daily rate) + PAYE + NSSF + NITA + VAT + agent fee - loans - damages - advances
+// salaries (monthly salary / days in month x days paid) + PAYE + NSSF + NITA + agent fee + VAT
+//   - loans - damages - advances
+// Runs made before 2026-11-19 paid days worked x one daily rate instead (payBasis DAILY_RATE); their
+// figures are kept and shown as they were.
 @Entity
 @Table(name = "agent_settlements")
 @Getter
@@ -23,8 +26,16 @@ import java.time.LocalDate;
 @Builder
 public class AgentSettlement extends BaseEntity {
 
+    public static final String BASIS_SALARY = "SALARY";
+    public static final String BASIS_DAILY_RATE = "DAILY_RATE";
+
     @Column(nullable = false)
     private Long agentId;
+
+    // SALARY (each employee's own salary) or DAILY_RATE (older runs: days x one company rate).
+    @Builder.Default
+    @Column(nullable = false, length = 20)
+    private String payBasis = BASIS_SALARY;
 
     @Column(nullable = false)
     private LocalDate periodStart;
