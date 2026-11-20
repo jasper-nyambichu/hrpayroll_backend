@@ -28,6 +28,7 @@ public class AgentSettlementController {
 
     private final AgentSettlementService settlementService;
     private final AccessGuard accessGuard;
+    private final com.company.hrpayroll.service.settlement.impl.PayrollUndoService payrollUndoService;
 
     private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
 
@@ -52,6 +53,16 @@ public class AgentSettlementController {
     @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
     public ApiResponse<com.company.hrpayroll.dto.response.settlement.AgentPaymentDetail> getDetail(@PathVariable Long settlementId) {
         return ApiResponse.success(settlementService.getDetail(settlementId));
+    }
+
+    // Undoes a payment run by mistake or as a test, as if it had never been run: loans, damages and advances it
+    // took are given back, and its money request, payslips and invoice are removed. Refused once the agent has
+    // recorded paying employees from it.
+    @PostMapping("/{settlementId}/undo")
+    @PreAuthorize(ADMIN_ROLES)
+    @Auditable(action = "AGENT_PAYMENT_UNDONE", entityType = "AgentSettlement")
+    public ApiResponse<com.company.hrpayroll.service.settlement.impl.PayrollUndoService.UndoResult> undo(@PathVariable Long settlementId) {
+        return ApiResponse.success("Agent payment undone", payrollUndoService.undo(settlementId));
     }
 
     // What still stands between this period and a calculation. Changes nothing.
