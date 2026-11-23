@@ -85,12 +85,7 @@ public class PaymentReceiptService {
                             new PdfDocumentWriter.Field("Receipt", "#" + request.getId()),
                             new PdfDocumentWriter.Field("Paid on", paidOn)),
                     companyService.getLetterhead(),
-                    List.of(
-                            new PdfDocumentWriter.Field("Paid to", agent.getName()),
-                            new PdfDocumentWriter.Field("KRA PIN", agent.getKraPin() != null ? agent.getKraPin() : "-"),
-                            new PdfDocumentWriter.Field("For", invoice != null
-                                    ? "Invoice #" + invoice.settlementId() + ", " + DateLabel.range(invoice.periodStart(), invoice.periodEnd())
-                                    : advance != null ? "Advance #" + advance.getId() : request.getPurpose())));
+                    details(agent, invoice, advance, request));
 
             // How it was paid.
             writer.sectionHeading("How it was paid");
@@ -142,6 +137,23 @@ public class PaymentReceiptService {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to generate the payment receipt PDF", e);
         }
+    }
+
+    // The details box under "Paid to": short lines, so none is cut off.
+    private static List<PdfDocumentWriter.Field> details(Agent agent, AgentPaymentDetail invoice, AgentAdvance advance, PaymentRequest request) {
+        List<PdfDocumentWriter.Field> fields = new ArrayList<>();
+        fields.add(new PdfDocumentWriter.Field("Paid to", agent.getName()));   // first: shown as the recipient
+        fields.add(new PdfDocumentWriter.Field("KRA PIN", agent.getKraPin() != null ? agent.getKraPin() : "-"));
+        if (invoice != null) {
+            fields.add(new PdfDocumentWriter.Field("For", "Invoice #" + invoice.settlementId()));
+            fields.add(new PdfDocumentWriter.Field("Period", DateLabel.range(invoice.periodStart(), invoice.periodEnd())));
+            fields.add(new PdfDocumentWriter.Field("Employees", String.valueOf(invoice.employees().size())));
+        } else if (advance != null) {
+            fields.add(new PdfDocumentWriter.Field("For", "Advance #" + advance.getId()));
+        } else {
+            fields.add(new PdfDocumentWriter.Field("For", "Money request #" + request.getId()));
+        }
+        return fields;
     }
 
     private List<String[]> howPaid(PaymentRequest request) {
