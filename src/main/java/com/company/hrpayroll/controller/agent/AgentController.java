@@ -87,7 +87,7 @@ public class AgentController {
     // Id and name of the active agents, for choosing one on a form. Branch Managers use this when
     // adding an employee (the chosen agent is notified); it exposes none of an agent's other details.
     @GetMapping("/options")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'FINANCE_OFFICER')")
     public ApiResponse<List<AgentOption>> getAgentOptions() {
         return ApiResponse.success(agentService.getAllAgents().stream()
                 .filter(agent -> "ACTIVE".equals(agent.status()))

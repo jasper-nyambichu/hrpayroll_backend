@@ -36,17 +36,17 @@ public class EmployeeController {
     private final AccessGuard accessGuard;
     private final AuditService auditService;
 
-    // Admin adds employees directly. Branch Managers and Agents propose them through
+    // The Admin and the Accounts Office add employees directly. Branch Managers and Agents propose them through
     // POST /employee-requests and an Admin approves (see EmployeeCreationRequestController).
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'FINANCE_OFFICER')")
     @Auditable(action = "EMPLOYEE_CREATED", entityType = "Employee")
     public ApiResponse<EmployeeResponse> createEmployee(@Valid @RequestBody EmployeeRequest request) {
         return ApiResponse.success("Employee created", employeeService.createEmployee(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'FINANCE_OFFICER')")
     @Auditable(action = "EMPLOYEE_UPDATED", entityType = "Employee")
     public ApiResponse<EmployeeResponse> updateEmployee(
             @PathVariable Long id, @Valid @RequestBody EmployeeRequest request
@@ -75,7 +75,7 @@ public class EmployeeController {
     // The full record carries national ID and bank details, so the Auditor and Back Office read
     // the list endpoints only.
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER') " +
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'FINANCE_OFFICER') " +
             "or (hasRole('BRANCH_MANAGER') and @accessGuard.isEmployeeInMyBranch(#id)) " +
             "or (hasRole('AGENT') and @accessGuard.isEmployeeOfMyAgent(#id)) " +
             "or @accessGuard.isSameEmployee(#id)")
