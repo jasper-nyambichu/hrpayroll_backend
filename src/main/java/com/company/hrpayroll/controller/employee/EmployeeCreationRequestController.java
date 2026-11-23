@@ -34,6 +34,7 @@ public class EmployeeCreationRequestController {
     @PreAuthorize(SUBMITTER_ROLES)
     @Auditable(action = "EMPLOYEE_CREATION_REQUESTED", entityType = "EmployeeCreationRequest")
     public ApiResponse<EmployeeCreationRequestResponse> submit(@Valid @RequestBody EmployeeRequest request) {
+        com.company.hrpayroll.service.employee.EmployeeNames.requireFirstAndLast(request.fullName());
         return ApiResponse.success(
                 "Request submitted for admin approval",
                 requestService.submit(request, accessGuard.currentUserId()));

@@ -42,6 +42,7 @@ public class EmployeeController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'FINANCE_OFFICER')")
     @Auditable(action = "EMPLOYEE_CREATED", entityType = "Employee")
     public ApiResponse<EmployeeResponse> createEmployee(@Valid @RequestBody EmployeeRequest request) {
+        com.company.hrpayroll.service.employee.EmployeeNames.requireFirstAndLast(request.fullName());
         return ApiResponse.success("Employee created", employeeService.createEmployee(request));
     }
 
