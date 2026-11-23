@@ -31,6 +31,8 @@ public class AgentSettlementController {
     private final com.company.hrpayroll.service.settlement.impl.PayrollUndoService payrollUndoService;
 
     private static final String ADMIN_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN')";
+    // Reading invoices: the Admin, and the Accounts Office that pays them.
+    private static final String READ_ROLES = "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'FINANCE_OFFICER')";
 
     @PostMapping("/calculate")
     @PreAuthorize(ADMIN_ROLES)
@@ -50,7 +52,7 @@ public class AgentSettlementController {
 
     // One payment line by line (employees, deductions, each advance with its dates). Admin, or the agent paid.
     @GetMapping("/{settlementId}/detail")
-    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
+    @PreAuthorize(READ_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
     public ApiResponse<com.company.hrpayroll.dto.response.settlement.AgentPaymentDetail> getDetail(@PathVariable Long settlementId) {
         return ApiResponse.success(settlementService.getDetail(settlementId));
     }
@@ -77,7 +79,7 @@ public class AgentSettlementController {
 
     // Every agent's payments, newest period first.
     @GetMapping
-    @PreAuthorize(ADMIN_ROLES)
+    @PreAuthorize(READ_ROLES)
     public ApiResponse<List<AgentSettlementResponse>> getAll() {
         return ApiResponse.success(settlementService.getAll());
     }
@@ -90,19 +92,19 @@ public class AgentSettlementController {
     }
 
     @GetMapping("/{settlementId}")
-    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
+    @PreAuthorize(READ_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
     public ApiResponse<AgentSettlementResponse> getOne(@PathVariable Long settlementId) {
         return ApiResponse.success(settlementService.getById(settlementId));
     }
 
     @GetMapping("/{settlementId}/invoice")
-    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
+    @PreAuthorize(READ_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
     public ResponseEntity<byte[]> downloadInvoice(@PathVariable Long settlementId) {
         return toPdfDownload(settlementService.getInvoice(settlementId));
     }
 
     @GetMapping("/{settlementId}/statement")
-    @PreAuthorize(ADMIN_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
+    @PreAuthorize(READ_ROLES + " or @accessGuard.isSettlementOfMyAgent(#settlementId)")
     public ResponseEntity<byte[]> downloadStatement(@PathVariable Long settlementId) {
         return toPdfDownload(settlementService.getStatement(settlementId));
     }

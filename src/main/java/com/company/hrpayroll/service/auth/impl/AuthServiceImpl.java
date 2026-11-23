@@ -62,6 +62,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final LoginAttemptService loginAttemptService;
     private final AuditService auditService;
+    private final com.company.hrpayroll.service.company.AccountsOffice accountsOffice;
 
     @Override
     public AuthResponse login(LoginRequest request) {
@@ -73,6 +74,10 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> fail(key, SURFACE_STAFF, identifier, null));
 
         if (!STAFF_ROLES.contains(user.getRole())) {
+            throw fail(key, SURFACE_STAFF, identifier, user.getId());
+        }
+        // An Accounts Office login works only where the organisation uses the Accounts Office.
+        if (user.getRole() == Role.FINANCE_OFFICER && !accountsOffice.enabled()) {
             throw fail(key, SURFACE_STAFF, identifier, user.getId());
         }
 

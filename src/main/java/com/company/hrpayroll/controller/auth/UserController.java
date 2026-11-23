@@ -87,6 +87,14 @@ public class UserController {
         return ApiResponse.success("Login created", userService.createAgentLogin(agentId, request));
     }
 
+    // An Accounts Office login; refused where the organisation does not use the Accounts Office.
+    @PostMapping("/accounts-office/login")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "USER_CREDENTIALS_CREATED", entityType = "User")
+    public ApiResponse<UserSummaryResponse> createAccountsLogin(@Valid @RequestBody CredentialsRequest request) {
+        return ApiResponse.success("Login created", userService.createAccountsLogin(request));
+    }
+
     @PutMapping("/{userId}/credentials")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Auditable(action = "USER_CREDENTIALS_CHANGED", entityType = "User")

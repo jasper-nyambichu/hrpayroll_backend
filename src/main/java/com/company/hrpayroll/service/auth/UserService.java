@@ -23,6 +23,8 @@ public interface UserService {
     record BranchMove(UserSummaryResponse moved, UserSummaryResponse swappedWith) {}
     UserSummaryResponse createBranchLogin(Long branchId, Role role, CredentialsRequest request);
     UserSummaryResponse createAgentLogin(Long agentId, CredentialsRequest request);
+
+    UserSummaryResponse createAccountsLogin(CredentialsRequest request);
     UserSummaryResponse changeCredentials(Long userId, CredentialsRequest request);
     SavedLoginResponse savedLogin(Long userId);
 }

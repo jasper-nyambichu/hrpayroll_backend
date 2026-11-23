@@ -101,6 +101,8 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
     private final NotificationService notificationService;
     private final AgentSettlementMapper mapper;
     private final CompanyService companyService;
+    private final com.company.hrpayroll.service.company.AccountsOffice accountsOffice;
+    private final com.company.hrpayroll.service.notification.NotificationRecipients recipients;
 
     /** One agent's payment, worked out but not saved. */
     private record Plan(
@@ -261,6 +263,14 @@ public class AgentSettlementServiceImpl implements AgentSettlementService {
                 user.getId(), TYPE_INVOICE_READY,
                 "Your invoice for " + DateLabel.range(start, end) + " is ready: KES " + format(totals.payable()) + ".",
                 saved.getId()));
+        // Where there is an Accounts Office, it receives the invoice too: it is the one that pays it.
+        if (saved.getPaymentRequestId() != null && accountsOffice.enabled()) {
+            String toPay = "Invoice #" + saved.getId() + " for " + agent.getName() + " (" + DateLabel.range(start, end)
+                    + ") is ready to pay: KES " + format(totals.payable()) + ".";
+            recipients.accountsOffice().forEach(user -> notificationService.notifyInApp(
+                    user.getId(), com.company.hrpayroll.service.payment.impl.PaymentRequestServiceImpl.TYPE_TO_PAY,
+                    toPay, saved.getPaymentRequestId()));
+        }
         return saved;
     }
 

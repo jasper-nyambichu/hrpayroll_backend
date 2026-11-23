@@ -21,7 +21,7 @@ import java.util.List;
 public class DepartmentController {
 
     private static final String READ_ROLES =
-            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BRANCH_MANAGER', 'AGENT', 'BACK_OFFICE')";
+            "hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'PAYROLL_OFFICER', 'AUDITOR', 'BRANCH_MANAGER', 'AGENT', 'BACK_OFFICE', 'FINANCE_OFFICER')";
 
     private final DepartmentService departmentService;
 

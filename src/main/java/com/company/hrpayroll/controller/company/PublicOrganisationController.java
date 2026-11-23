@@ -28,8 +28,10 @@ import java.util.concurrent.TimeUnit;
 public class PublicOrganisationController {
 
     private final CompanyService companyService;
+    private final com.company.hrpayroll.service.company.AccountsOffice accountsOffice;
 
-    public record OrganisationBranding(String name, boolean hasLogo, String logoVersion) {}
+    // accountsOffice: whether this organisation uses the Accounts Office portal (so the web shows its menus).
+    public record OrganisationBranding(String name, boolean hasLogo, String logoVersion, boolean accountsOffice) {}
 
     @GetMapping
     public ApiResponse<OrganisationBranding> get() {
@@ -38,9 +40,9 @@ public class PublicOrganisationController {
             boolean hasLogo = company.logoUrl() != null;
             // A fingerprint of the image itself, so browsers fetch a newly uploaded logo straight away.
             String version = hasLogo ? Integer.toHexString(Arrays.hashCode(companyService.getLogo().content())) : null;
-            return ApiResponse.success(new OrganisationBranding(company.name(), hasLogo, version));
+            return ApiResponse.success(new OrganisationBranding(company.name(), hasLogo, version, accountsOffice.enabled()));
         } catch (ResourceNotFoundException notSetUp) {
-            return ApiResponse.success(new OrganisationBranding(null, false, null));
+            return ApiResponse.success(new OrganisationBranding(null, false, null, false));
         }
     }
 

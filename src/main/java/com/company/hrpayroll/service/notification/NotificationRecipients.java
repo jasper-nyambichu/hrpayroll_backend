@@ -27,6 +27,13 @@ public class NotificationRecipients {
                 .toList();
     }
 
+    // Every active Accounts Office login (role FINANCE_OFFICER).
+    public List<User> accountsOffice() {
+        return userRepository.findByRole(Role.FINANCE_OFFICER).stream()
+                .filter(User::isActive)
+                .toList();
+    }
+
     public Optional<User> agentLogin(Long agentId) {
         if (agentId == null) {
             return Optional.empty();

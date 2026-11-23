@@ -93,4 +93,11 @@ public class CompanySettings extends BaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private java.time.LocalTime workEndTime = java.time.LocalTime.of(17, 0);
+
+    // ---- The Accounts Office portal (role FINANCE_OFFICER): on only for the organisations that use it (V39) ----
+    // When on, the Accounts Office pays agents (M-Pesa, cheque or manual, with proof) instead of the Admin.
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean accountsOfficeEnabled = false;
 }

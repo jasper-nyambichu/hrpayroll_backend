@@ -25,7 +25,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EmployeeCreationRequestController {
 
-    private static final String SUBMITTER_ROLES = "hasAnyRole('HR_MANAGER', 'BRANCH_MANAGER', 'AGENT')";
+    private static final String SUBMITTER_ROLES = "hasAnyRole('HR_MANAGER', 'BRANCH_MANAGER', 'AGENT', 'FINANCE_OFFICER')";
 
     private final EmployeeCreationRequestService requestService;
     private final AccessGuard accessGuard;
@@ -59,7 +59,7 @@ public class EmployeeCreationRequestController {
 
     // Admin sees any; a submitter only the ones they submitted.
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'AGENT')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'BRANCH_MANAGER', 'AGENT', 'FINANCE_OFFICER')")
     public ApiResponse<EmployeeCreationRequestResponse> getById(@PathVariable Long id, Authentication auth) {
         EmployeeCreationRequestResponse response = requestService.getById(id);
 

@@ -78,6 +78,46 @@ public class PaymentRequestController {
                 paymentRequestService.release(paymentRequestId, request.reference(), accessGuard.currentUserId()));
     }
 
+    // The Accounts Office pays an agent invoice and records how, with proof: M-Pesa (code), cheque (number, bank,
+    // date) or manual (a description), the day it was paid, a note, and optionally a PDF/photo of the proof.
+    // Only where the organisation uses the Accounts Office (refused otherwise). The Admin and the agent are told.
+    @PostMapping(value = "/{paymentRequestId}/pay", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('FINANCE_OFFICER')")
+    @Auditable(action = "AGENT_PAYMENT_PAID", entityType = "PaymentRequest")
+    public ApiResponse<PaymentRequestResponse> pay(
+            @PathVariable Long paymentRequestId,
+            @RequestParam String method,
+            @RequestParam(required = false) String reference,
+            @RequestParam(required = false) String chequeNumber,
+            @RequestParam(required = false) String chequeBank,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate chequeDate,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate paidOn,
+            @RequestParam(required = false) String note,
+            @RequestParam(required = false) org.springframework.web.multipart.MultipartFile evidence
+    ) {
+        var record = new com.company.hrpayroll.dto.request.payment.AgentPaymentRecord(
+                method, reference, chequeNumber, chequeBank, chequeDate, paidOn, note);
+        return ApiResponse.success("Payment recorded",
+                paymentRequestService.pay(paymentRequestId, record, evidence, accessGuard.currentUserId()));
+    }
+
+    // The proof uploaded with a payment: staff who read payments, or the agent it was paid to.
+    @GetMapping("/{paymentRequestId}/evidence")
+    @PreAuthorize(STAFF_READ_ROLES + " or hasRole('AGENT')")
+    public org.springframework.http.ResponseEntity<byte[]> evidence(@PathVariable Long paymentRequestId) {
+        Long agentId = accessGuard.isAgent() ? accessGuard.currentAgentId() : null;
+        if (accessGuard.isAgent() && agentId == null) {
+            throw new com.company.hrpayroll.exception.ResourceNotFoundException("Payment request not found with id: " + paymentRequestId);
+        }
+        var file = paymentRequestService.evidence(paymentRequestId, agentId);
+        var headers = new org.springframework.http.HttpHeaders();
+        headers.setContentDispositionFormData("attachment", file.fileName());
+        return org.springframework.http.ResponseEntity.ok()
+                .headers(headers)
+                .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+                .body(file.content());
+    }
+
     // Company-wide, newest first. Optional ?status=PENDING|APPROVED|REJECTED|RELEASED|CANCELLED.
     @GetMapping
     @PreAuthorize(STAFF_READ_ROLES)

@@ -65,6 +65,11 @@ public class PayrollUndoService {
                 .orElseThrow(() -> new ResourceNotFoundException("Agent payment not found with id: " + settlementId));
 
         Long requestId = settlement.getPaymentRequestId();
+        if (requestId != null && paymentRequestRepository.findById(requestId)
+                .map(request -> "RELEASED".equals(request.getStatus())).orElse(false)) {
+            throw new InvalidOperationException(
+                    "This payment has already been paid to the agent, so it can't be undone.");
+        }
         if (requestId != null && !employeePaymentRepository.findByPaymentRequestId(requestId).isEmpty()) {
             throw new InvalidOperationException(
                     "The agent has already recorded paying employees from this payment, so it can't be undone.");
@@ -126,7 +131,7 @@ public class PayrollUndoService {
         settlementRepository.delete(settlement);
         settlementRepository.flush();
         if (requestId != null) {
-            for (String type : List.of("PAYMENT_REQUEST_APPROVED", "PAYMENT_REQUEST_RELEASED")) {
+            for (String type : List.of("PAYMENT_REQUEST_APPROVED", "PAYMENT_REQUEST_RELEASED", "AGENT_INVOICE_TO_PAY")) {
                 notificationService.resolveByReference(type, requestId);
             }
             paymentRequestRepository.deleteById(requestId);

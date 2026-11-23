@@ -29,4 +29,11 @@ public interface PaymentRequestService {
     List<PaymentRequestResponse> getAll(String status);
     List<PaymentRequestResponse> getForAgent(Long agentId);
     PaymentRequestResponse getById(Long paymentRequestId);
+
+    // The Accounts Office pays an approved agent invoice and records how (M-Pesa, cheque or manual) with proof.
+    PaymentRequestResponse pay(Long paymentRequestId, com.company.hrpayroll.dto.request.payment.AgentPaymentRecord record,
+                               org.springframework.web.multipart.MultipartFile evidence, Long paidByUserId);
+
+    // The proof uploaded with a payment. agentId: when an agent asks, only their own payment's.
+    com.company.hrpayroll.dto.response.common.GeneratedDocument evidence(Long paymentRequestId, Long agentId);
 }

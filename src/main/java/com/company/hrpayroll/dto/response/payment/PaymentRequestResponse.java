@@ -23,5 +23,13 @@ public record PaymentRequestResponse(
         String releaseReference,
         BigDecimal paidTotal,
         BigDecimal remaining,
-        int paymentCount
+        int paymentCount,
+        // How the Accounts Office paid it (V39); empty for payments released before that.
+        String paymentMethod,
+        String chequeNumber,
+        String chequeBank,
+        java.time.LocalDate chequeDate,
+        java.time.LocalDate paidOn,
+        String paymentNote,
+        boolean hasEvidence
 ) {}

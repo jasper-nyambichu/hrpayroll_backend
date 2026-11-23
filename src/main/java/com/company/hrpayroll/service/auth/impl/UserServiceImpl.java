@@ -40,7 +40,7 @@ public class UserServiceImpl implements UserService {
             Role.ADMIN, Role.BRANCH_MANAGER, Role.AGENT, Role.BACK_OFFICE);
 
     // The logins whose username and password the Admin sets and shares.
-    private static final Set<Role> ADMIN_SET_ROLES = EnumSet.of(Role.BRANCH_MANAGER, Role.BACK_OFFICE, Role.AGENT);
+    private static final Set<Role> ADMIN_SET_ROLES = EnumSet.of(Role.BRANCH_MANAGER, Role.BACK_OFFICE, Role.AGENT, Role.FINANCE_OFFICER);
 
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
@@ -50,6 +50,7 @@ public class UserServiceImpl implements UserService {
     private final NotificationService notificationService;
     private final IssuedPasswordCipher issuedPasswordCipher;
     private final BusinessClock clock;
+    private final com.company.hrpayroll.service.company.AccountsOffice accountsOffice;
 
     @Override
     public UserSummaryResponse createUser(CreateUserRequest request) {
@@ -221,6 +222,18 @@ public class UserServiceImpl implements UserService {
         return userMapper.toUserSummaryResponse(saved);
     }
 
+    // An Accounts Office login (role FINANCE_OFFICER). Only where the organisation uses the Accounts Office;
+    // there can be several (one per person in the office).
+    @Override
+    @Transactional
+    public UserSummaryResponse createAccountsLogin(CredentialsRequest request) {
+        accountsOffice.requireEnabled();
+        User saved = userRepository.save(newLogin(request, Role.FINANCE_OFFICER, "Accounts Office").build());
+        rememberIssuedPassword(saved, request.password());
+        saved = userRepository.save(saved);
+        return userMapper.toUserSummaryResponse(saved);
+    }
+
     // A new username ends any session at once, because every request looks the account up by username.
     @Override
     public UserSummaryResponse changeCredentials(Long userId, CredentialsRequest request) {
@@ -229,7 +242,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         if (!ADMIN_SET_ROLES.contains(user.getRole())) {
-            throw new InvalidOperationException("Only Branch Manager, Back Office and Agent logins can be changed here");
+            throw new InvalidOperationException("Only Branch Manager, Back Office, Agent and Accounts Office logins can be changed here");
         }
         if (!request.username().equals(user.getUsername())) {
             rejectIfUsernameTaken(request.username());

@@ -2,6 +2,17 @@
 package com.company.hrpayroll.service.payment.impl;
 
 import com.company.hrpayroll.config.BusinessClock;
+import com.company.hrpayroll.dto.request.payment.AgentPaymentRecord;
+import com.company.hrpayroll.dto.response.common.GeneratedDocument;
+import com.company.hrpayroll.entity.payment.PaymentEvidence;
+import com.company.hrpayroll.exception.DuplicateResourceException;
+import com.company.hrpayroll.repository.payment.PaymentEvidenceRepository;
+import com.company.hrpayroll.service.company.AccountsOffice;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import com.company.hrpayroll.dto.request.payment.PaymentRequestCreateRequest;
 import com.company.hrpayroll.dto.response.payment.PaymentRequestResponse;
 import com.company.hrpayroll.entity.agent.Agent;
@@ -38,6 +49,11 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
     private static final String TYPE_APPROVED = "PAYMENT_REQUEST_APPROVED";
     private static final String TYPE_REJECTED = "PAYMENT_REQUEST_REJECTED";
     private static final String TYPE_RELEASED = "PAYMENT_REQUEST_RELEASED";
+    private static final String TYPE_PAID = "AGENT_PAYMENT_PAID";          // -> the Admins, once Accounts has paid
+    public static final String TYPE_TO_PAY = "AGENT_INVOICE_TO_PAY";      // -> the Accounts Office, after a payroll run
+
+    private static final long MAX_EVIDENCE_BYTES = 5L * 1024 * 1024;
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
     private final PaymentRequestRepository paymentRequestRepository;
     private final EmployeePaymentRepository employeePaymentRepository;
@@ -46,6 +62,8 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
     private final NotificationService notificationService;
     private final NotificationRecipients recipients;
     private final BusinessClock businessClock;
+    private final PaymentEvidenceRepository evidenceRepository;
+    private final AccountsOffice accountsOffice;
 
     @Override
     @Transactional
@@ -84,7 +102,7 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
 
         recipients.agentLogin(agentId).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
-                        purpose + ": " + kes(amount) + ". The Administrator will release the money.", saved.getId()));
+                        purpose + ": " + kes(amount) + ". " + whoPays(), saved.getId()));
 
         return saved.getId();
     }
@@ -125,7 +143,7 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
         recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
                         "Your request for " + kes(saved.getAmount())
-                                + " was approved. The Administrator will release the money.", saved.getId()));
+                                + " was approved. " + whoPays(), saved.getId()));
 
         return toResponse(saved);
     }
@@ -154,6 +172,11 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
     @Override
     @Transactional
     public PaymentRequestResponse release(Long paymentRequestId, String reference, Long releasedByUserId) {
+        // Where the organisation has an Accounts Office, it pays (with the mode of payment and proof), not the Admin.
+        if (accountsOffice.enabled()) {
+            throw new InvalidOperationException(
+                    "The Accounts Office pays agents here, recording how it was paid (M-Pesa, cheque or manual).");
+        }
         PaymentRequest request = findOrThrow(paymentRequestId);
         requireStatus(request, APPROVED, "released");
 
@@ -196,6 +219,161 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
         return toResponse(findOrThrow(paymentRequestId));
     }
 
+    @Override
+    @Transactional
+    public PaymentRequestResponse pay(Long paymentRequestId, AgentPaymentRecord record, MultipartFile evidence, Long paidByUserId) {
+        accountsOffice.requireEnabled();
+        PaymentRequest request = paymentRequestRepository.findForUpdate(paymentRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment request not found with id: " + paymentRequestId));
+        requireStatus(request, APPROVED, "paid");
+
+        LocalDate today = businessClock.today();
+        LocalDate paidOn = record.paidOn() == null ? today : record.paidOn();
+        if (paidOn.isAfter(today)) {
+            throw new InvalidOperationException("The payment date cannot be in the future");
+        }
+
+        String method = text(record.method()).toUpperCase(Locale.ROOT);
+        String summary;
+        switch (method) {
+            case "MPESA" -> {
+                String code = text(record.reference()).toUpperCase(Locale.ROOT);
+                if (!code.matches("^[A-Z0-9]{10}$")) {
+                    throw new InvalidOperationException("An M-Pesa code is 10 letters and numbers, e.g. QGH7K2L9XP");
+                }
+                if (paymentRequestRepository.existsByPaymentMethodAndReleaseReferenceIgnoreCase("MPESA", code)) {
+                    throw new DuplicateResourceException("The M-Pesa code " + code + " has already been used for another payment");
+                }
+                request.setReleaseReference(code);
+                summary = "M-Pesa " + code;
+            }
+            case "CHEQUE" -> {
+                String number = text(record.chequeNumber()).toUpperCase(Locale.ROOT);
+                String bank = text(record.chequeBank());
+                if (!number.matches("^[A-Z0-9-]{4,30}$")) {
+                    throw new InvalidOperationException("Enter the cheque number as printed on the cheque");
+                }
+                if (bank.length() < 2 || bank.length() > 100) {
+                    throw new InvalidOperationException("Enter the bank the cheque is drawn on");
+                }
+                if (record.chequeDate() == null) {
+                    throw new InvalidOperationException("Enter the date written on the cheque");
+                }
+                if (paymentRequestRepository.existsByPaymentMethodAndChequeBankIgnoreCaseAndChequeNumberIgnoreCase("CHEQUE", bank, number)) {
+                    throw new DuplicateResourceException("Cheque " + number + " of " + bank + " has already been used for another payment");
+                }
+                request.setChequeNumber(number);
+                request.setChequeBank(bank);
+                request.setChequeDate(record.chequeDate());
+                summary = clip("Cheque " + number + " · " + bank + " · dated " + record.chequeDate().format(DAY), 100);
+                request.setReleaseReference(summary);
+            }
+            case "MANUAL" -> {
+                String reference = text(record.reference());
+                if (reference.length() < 3) {
+                    throw new InvalidOperationException(
+                            "Say how it was paid, e.g. the cash receipt number or the bank transfer reference");
+                }
+                request.setReleaseReference(clip(reference, 100));
+                summary = "Manual: " + clip(reference, 100);
+            }
+            default -> throw new InvalidOperationException("Choose how the agent was paid: M-Pesa, cheque or manual");
+        }
+
+        String note = text(record.note());
+        if (note.length() > 500) {
+            throw new InvalidOperationException("The note can be at most 500 characters");
+        }
+
+        request.setPaymentMethod(method);
+        request.setPaidOn(paidOn);
+        request.setPaymentNote(note.isEmpty() ? null : note);
+        request.setStatus(RELEASED);
+        request.setReleasedByUserId(paidByUserId);
+        request.setReleasedAt(businessClock.now());
+        PaymentRequest saved = paymentRequestRepository.save(request);
+
+        if (evidence != null && !evidence.isEmpty()) {
+            saveEvidence(saved.getId(), evidence, paidByUserId);
+        }
+
+        String agent = agentName(saved.getAgentId());
+        String when = paidOn.format(DAY);
+        String how = summary;
+        recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
+                notificationService.notifyInApp(agentUser.getId(), TYPE_RELEASED,
+                        kes(saved.getAmount()) + " has been paid to you by the Accounts Office on " + when + " (" + how
+                                + "). You can now record each M-Pesa payment to your employees.", saved.getId()));
+        String toAdmins = "The Accounts Office paid " + agent + " " + kes(saved.getAmount()) + " on " + when
+                + " (" + how + ") for " + saved.getPurpose() + ".";
+        recipients.admins().forEach(admin ->
+                notificationService.notifyInApp(admin.getId(), TYPE_PAID, toAdmins, saved.getId()));
+        notificationService.resolveByReference(TYPE_TO_PAY, saved.getId());
+
+        return toResponse(saved);
+    }
+
+    @Override
+    public GeneratedDocument evidence(Long paymentRequestId, Long agentId) {
+        PaymentRequest request = findOrThrow(paymentRequestId);
+        // Another agent's payment looks exactly like one that does not exist.
+        if (agentId != null && !agentId.equals(request.getAgentId())) {
+            throw new ResourceNotFoundException("Payment request not found with id: " + paymentRequestId);
+        }
+        PaymentEvidence evidence = evidenceRepository.findByPaymentRequestId(paymentRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("No proof of payment was uploaded for this payment"));
+        return new GeneratedDocument(evidence.getFileName(), evidence.getContentType(), evidence.getData());
+    }
+
+    private void saveEvidence(Long paymentRequestId, MultipartFile file, Long userId) {
+        byte[] content;
+        try {
+            content = file.getBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read the uploaded proof of payment", e);
+        }
+        if (content.length > MAX_EVIDENCE_BYTES) {
+            throw new InvalidOperationException("The proof of payment must be 5 MB or smaller");
+        }
+        // Going by the file's first bytes, not the name or type the browser claims it is.
+        String contentType = detectType(content);
+        if (contentType == null) {
+            throw new InvalidOperationException("The proof of payment must be a PDF, PNG or JPEG file");
+        }
+        String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        String name = original.replaceAll("[^A-Za-z0-9 ._()-]", "").trim();
+        if (name.isEmpty()) {
+            String extension = contentType.equals("application/pdf") ? ".pdf" : contentType.equals("image/png") ? ".png" : ".jpg";
+            name = "proof-of-payment-" + paymentRequestId + extension;
+        }
+        evidenceRepository.save(PaymentEvidence.builder()
+                .paymentRequestId(paymentRequestId)
+                .fileName(clip(name, 200))
+                .contentType(contentType)
+                .data(content)
+                .uploadedByUserId(userId)
+                .build());
+    }
+
+    private static String detectType(byte[] c) {
+        if (c.length >= 4 && c[0] == '%' && c[1] == 'P' && c[2] == 'D' && c[3] == 'F') return "application/pdf";
+        if (c.length >= 4 && (c[0] & 0xFF) == 0x89 && c[1] == 'P' && c[2] == 'N' && c[3] == 'G') return "image/png";
+        if (c.length >= 3 && (c[0] & 0xFF) == 0xFF && (c[1] & 0xFF) == 0xD8 && (c[2] & 0xFF) == 0xFF) return "image/jpeg";
+        return null;
+    }
+
+    private String whoPays() {
+        return accountsOffice.enabled() ? "The Accounts Office will pay it." : "The Administrator will release the money.";
+    }
+
+    private static String text(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String clip(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+
     // ---- helpers ----
 
     private void requireStatus(PaymentRequest request, String expected, String action) {
@@ -224,7 +402,8 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
                 recipients.nameOf(request.getDecidedByUserId()),
                 recipients.nameOf(request.getReleasedByUserId()),
                 paidTotal,
-                payments.size());
+                payments.size(),
+                evidenceRepository.existsByPaymentRequestId(request.getId()));
     }
 
     private String agentName(Long agentId) {

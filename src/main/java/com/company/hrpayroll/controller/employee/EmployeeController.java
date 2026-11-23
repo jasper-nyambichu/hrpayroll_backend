@@ -126,7 +126,7 @@ public class EmployeeController {
 
     // A branch's list, with basic salary. Admin only.
     @GetMapping("/directory/by-branch/{branchId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'FINANCE_OFFICER')")
     public ApiResponse<List<EmployeeDirectoryResponse>> getBranchDirectory(@PathVariable Long branchId) {
         return ApiResponse.success(employeeService.getBranchDirectory(branchId));
     }

@@ -29,7 +29,7 @@ public class PaymentMapper {
     // Names and totals live elsewhere, so the service resolves them and passes them in.
     public PaymentRequestResponse toPaymentRequestResponse(
             PaymentRequest request, String agentName, String requestedByName, String decidedByName,
-            String releasedByName, BigDecimal paidTotal, int paymentCount) {
+            String releasedByName, BigDecimal paidTotal, int paymentCount, boolean hasEvidence) {
         return new PaymentRequestResponse(
                 request.getId(),
                 request.getAgentId(),
@@ -47,7 +47,14 @@ public class PaymentMapper {
                 request.getReleaseReference(),
                 paidTotal,
                 request.getAmount().subtract(paidTotal),
-                paymentCount
+                paymentCount,
+                request.getPaymentMethod(),
+                request.getChequeNumber(),
+                request.getChequeBank(),
+                request.getChequeDate(),
+                request.getPaidOn(),
+                request.getPaymentNote(),
+                hasEvidence
         );
     }
 

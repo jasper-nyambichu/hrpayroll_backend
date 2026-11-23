@@ -92,7 +92,8 @@ class BranchMoveTest {
     private final NotificationService notifications = mock(NotificationService.class);
     private final UserServiceImpl userService = new UserServiceImpl(
             users, branches, mock(AgentRepository.class), new UserMapper(), mock(PasswordEncoder.class), notifications,
-            mock(com.company.hrpayroll.service.auth.impl.IssuedPasswordCipher.class), mock(com.company.hrpayroll.config.BusinessClock.class));
+            mock(com.company.hrpayroll.service.auth.impl.IssuedPasswordCipher.class), mock(com.company.hrpayroll.config.BusinessClock.class),
+            mock(com.company.hrpayroll.service.company.AccountsOffice.class));
 
     private User managerAtOldBranch(Branch oldBranch, Branch newBranch) {
         User user = manager(10L, OLD_BRANCH, "Westlands Branch Manager");
