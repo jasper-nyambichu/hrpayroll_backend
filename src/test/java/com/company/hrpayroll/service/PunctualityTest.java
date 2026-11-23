@@ -37,7 +37,9 @@ class PunctualityTest {
     private final CompanySettingsRepository settings = mock(CompanySettingsRepository.class);
     private final BusinessClock clock = mock(BusinessClock.class);
     private final PunctualityService service = new PunctualityService(attendance, checkouts, employees,
-            mock(BranchRepository.class), offDays, settings, clock);
+            mock(BranchRepository.class), offDays, settings, clock,
+            new com.company.hrpayroll.service.company.OrganisationOperations(
+                    mock(com.company.hrpayroll.repository.company.WorkWeekDayRepository.class), settings));
 
     private static LocalDateTime at(int day, int hour, int minute) {
         return LocalDateTime.of(2026, 11, day, hour, minute);

@@ -100,4 +100,11 @@ public class CompanySettings extends BaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private boolean accountsOfficeEnabled = false;
+
+    // ---- Off days (V40): only one employee of a department (in the same branch) off on the same day ----
+    // On for Shah Ceramics, off for Kisiimatt; the Admin can change it under Settings.
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean oneOffPerDepartment = false;
 }

@@ -37,7 +37,9 @@ class OffDayRulesTest {
     private final EmployeeRepository employees = mock(EmployeeRepository.class);
     private final BusinessClock clock = mock(BusinessClock.class);
     private final OffDayServiceImpl service = new OffDayServiceImpl(offDays, employees,
-            mock(BranchRepository.class), mock(AgentRepository.class), clock);
+            mock(BranchRepository.class), mock(AgentRepository.class), clock,
+            mock(com.company.hrpayroll.service.company.OrganisationOperations.class),
+            mock(com.company.hrpayroll.repository.department.DepartmentRepository.class));
 
     private final List<OffDay> stored = new ArrayList<>();
 

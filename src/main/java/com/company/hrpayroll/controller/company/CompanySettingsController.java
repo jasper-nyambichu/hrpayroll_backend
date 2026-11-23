@@ -19,6 +19,23 @@ import org.springframework.web.bind.annotation.*;
 public class CompanySettingsController {
 
     private final CompanySettingsService companySettingsService;
+    private final com.company.hrpayroll.service.company.OrganisationOperations operations;
+
+    // How the organisation operates: its work week (hours per day) and the off-day department rule.
+    @GetMapping("/operations")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'PAYROLL_OFFICER', 'FINANCE_OFFICER', 'AUDITOR', 'BRANCH_MANAGER', 'BACK_OFFICE')")
+    public ApiResponse<com.company.hrpayroll.service.company.OrganisationOperations.Operations> getOperations() {
+        return ApiResponse.success(operations.get());
+    }
+
+    @PutMapping("/operations")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Auditable(action = "WORK_WEEK_UPDATED", entityType = "CompanySettings")
+    public ApiResponse<com.company.hrpayroll.service.company.OrganisationOperations.Operations> updateOperations(
+            @RequestBody com.company.hrpayroll.service.company.OrganisationOperations.Operations request
+    ) {
+        return ApiResponse.success("Work week saved", operations.update(request));
+    }
 
     // FINANCE_OFFICER and AUDITOR read the rules (e.g. to check the VAT rate on agent invoices).
     @GetMapping

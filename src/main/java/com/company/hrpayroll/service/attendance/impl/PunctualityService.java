@@ -66,6 +66,7 @@ public class PunctualityService {
     private final OffDayRepository offDayRepository;
     private final CompanySettingsRepository settingsRepository;
     private final BusinessClock businessClock;
+    private final com.company.hrpayroll.service.company.OrganisationOperations operations;
 
     @Transactional(readOnly = true)
     public PunctualityReport report(LocalDate start, LocalDate end, Long branchId, Long employeeId) {
@@ -91,8 +92,12 @@ public class PunctualityService {
                     .stream().filter(e -> "ACTIVE".equals(e.getEmploymentStatus())).toList();
         }
 
-        LocalTime workStart = settings().map(CompanySettings::getWorkStartTime).orElse(DEFAULT_START);
-        LocalTime workEnd = settings().map(CompanySettings::getWorkEndTime).orElse(DEFAULT_END);
+        // Each day is measured against its own hours (Settings → work week); a day the organisation does not work
+        // is not expected. The report's single start/end are the first working day's, for the headings.
+        Map<java.time.DayOfWeek, com.company.hrpayroll.service.company.OrganisationOperations.Day> week = operations.schedule();
+        var firstWorking = week.values().stream().filter(com.company.hrpayroll.service.company.OrganisationOperations.Day::working).findFirst();
+        LocalTime workStart = firstWorking.map(com.company.hrpayroll.service.company.OrganisationOperations.Day::startTime).orElse(DEFAULT_START);
+        LocalTime workEnd = firstWorking.map(com.company.hrpayroll.service.company.OrganisationOperations.Day::endTime).orElse(DEFAULT_END);
 
         List<Long> ids = employees.stream().map(Employee::getId).toList();
         Map<Long, List<Attendance>> attendance = ids.isEmpty() ? Map.of()
@@ -114,7 +119,7 @@ public class PunctualityService {
                 .stream().collect(Collectors.toMap(Branch::getId, Branch::getName));
 
         List<EmployeePunctuality> rows = employees.stream()
-                .map(e -> forEmployee(e, from, to, today, workStart, workEnd,
+                .map(e -> forEmployee(e, from, to, today, week,
                         attendance.getOrDefault(e.getId(), List.of()), checkoutsByAttendance,
                         offDates.getOrDefault(e.getId(), Set.of()), branchNames.get(e.getBranchId()), employeeId != null))
                 .sorted(Comparator.comparing(EmployeePunctuality::employeeName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
@@ -162,7 +167,8 @@ public class PunctualityService {
     // ------------------------------------------------------------------------------------------------
 
     private EmployeePunctuality forEmployee(Employee e, LocalDate from, LocalDate to, LocalDate today,
-                                            LocalTime workStart, LocalTime workEnd, List<Attendance> records,
+                                            Map<java.time.DayOfWeek, com.company.hrpayroll.service.company.OrganisationOperations.Day> week,
+                                            List<Attendance> records,
                                             Map<Long, List<AttendanceCheckout>> checkouts, Set<LocalDate> offDays,
                                             String branchName, boolean withDays) {
         Map<LocalDate, List<Attendance>> byDate = new TreeMap<>(records.stream()
@@ -180,6 +186,12 @@ public class PunctualityService {
 
         for (LocalDate d = firstDay; !d.isAfter(lastDay); d = d.plusDays(1)) {
             List<Attendance> day = byDate.get(d);
+            var hours = week.get(d.getDayOfWeek());
+            // A day the organisation does not work is not expected; anyone who came anyway is not late or early.
+            if (!hours.working() && day == null) continue;
+            boolean closedDay = !hours.working();
+            LocalTime workStart = hours.startTime();
+            LocalTime workEnd = hours.endTime();
             boolean isOff = offDays.contains(d);
             if (isOff && day == null) {
                 off++;
@@ -197,10 +209,10 @@ public class PunctualityService {
             boolean stillIn = day.stream().anyMatch(a -> a.getClockOut() == null);
             LocalDateTime out = stillIn ? null : day.stream().map(Attendance::getClockOut).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
 
-            Integer late = in.toLocalTime().isAfter(workStart) ? minutesLate(d.atTime(workStart), in) : null;
+            Integer late = !closedDay && in.toLocalTime().isAfter(workStart) ? minutesLate(d.atTime(workStart), in) : null;
             if (late != null) { lateArrivals++; lateMinutes += late; } else onTime++;
 
-            Integer early = out != null && out.toLocalDate().equals(d) && out.toLocalTime().isBefore(workEnd)
+            Integer early = !closedDay && out != null && out.toLocalDate().equals(d) && out.toLocalTime().isBefore(workEnd)
                     ? (int) Duration.between(out, d.atTime(workEnd)).toMinutes() : null;
             if (early != null && early > 0) { earlyLeaves++; earlyMinutes += early; } else early = null;
 

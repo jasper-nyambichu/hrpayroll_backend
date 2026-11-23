@@ -55,6 +55,8 @@ public class OffDayServiceImpl implements OffDayService {
     private final BranchRepository branchRepository;
     private final AgentRepository agentRepository;
     private final BusinessClock businessClock;
+    private final com.company.hrpayroll.service.company.OrganisationOperations operations;
+    private final com.company.hrpayroll.repository.department.DepartmentRepository departmentRepository;
 
     @Override
     @Transactional
@@ -73,6 +75,9 @@ public class OffDayServiceImpl implements OffDayService {
             if (offDayRepository.existsByEmployeeIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(employee.getId(), date, date)) {
                 throw new InvalidOperationException(employee.getFullName() + " is already off on " + date);
             }
+        }
+        for (LocalDate date : dates) {
+            checkDepartmentRule(employee, date, null);
         }
         Map<YearMonth, Integer> adding = new TreeMap<>();
         dates.forEach(date -> adding.merge(YearMonth.from(date), 1, Integer::sum));
@@ -114,6 +119,7 @@ public class OffDayServiceImpl implements OffDayService {
             throw new InvalidOperationException(employee.getFullName() + " is already off on " + request.date());
         }
         checkMonthLimit(employee, YearMonth.from(request.date()), 1, offDay.getId());
+        checkDepartmentRule(employee, request.date(), offDay.getId());
 
         offDay.setStartDate(request.date());
         offDay.setEndDate(request.date());
@@ -173,6 +179,28 @@ public class OffDayServiceImpl implements OffDayService {
     }
 
     // The days the employee already has off in that month (a day of an older range counts too), plus the new ones.
+    // Where the organisation has it on (Settings; on for Shah Ceramics): only one employee of a department in the same
+    // branch may be off on the same day. An employee without a department is not limited.
+    private void checkDepartmentRule(Employee employee, LocalDate date, Long ignoreOffDayId) {
+        if (employee.getDepartmentId() == null || !operations.oneOffPerDepartment()) return;
+        Set<Long> othersOff = offDayRepository.findByStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(date, date)
+                .stream()
+                .filter(other -> !other.getId().equals(ignoreOffDayId) && !other.getEmployeeId().equals(employee.getId()))
+                .map(OffDay::getEmployeeId)
+                .collect(Collectors.toSet());
+        if (othersOff.isEmpty()) return;
+        employeeRepository.findAllById(othersOff).stream()
+                .filter(other -> Objects.equals(other.getDepartmentId(), employee.getDepartmentId())
+                        && Objects.equals(other.getBranchId(), employee.getBranchId()))
+                .findFirst()
+                .ifPresent(other -> {
+                    String department = departmentRepository.findById(employee.getDepartmentId())
+                            .map(com.company.hrpayroll.entity.department.Department::getName).orElse("the same department");
+                    throw new InvalidOperationException(other.getFullName() + " (" + department + ") is already off on " + date
+                            + ". Only one employee per department can be off on the same day.");
+                });
+    }
+
     private void checkMonthLimit(Employee employee, YearMonth month, int adding, Long ignoreId) {
         LocalDate first = month.atDay(1);
         LocalDate last = month.atEndOfMonth();
