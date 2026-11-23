@@ -95,7 +95,7 @@ public class EmployeeController {
     // what it holds, whatever the request asks for: an Admin any branch or all of them, a Branch
     // Manager their own branch, an Agent only their own employees. Branch Managers do not get salary.
     @GetMapping("/export")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BRANCH_MANAGER', 'AGENT')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'BRANCH_MANAGER', 'AGENT', 'FINANCE_OFFICER')")
     public ResponseEntity<byte[]> exportEmployees(
             @RequestParam(defaultValue = "PDF") EmployeeExportService.Format format,
             @RequestParam(required = false) Long branchId

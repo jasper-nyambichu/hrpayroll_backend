@@ -31,5 +31,6 @@ public record PaymentRequestResponse(
         java.time.LocalDate chequeDate,
         java.time.LocalDate paidOn,
         String paymentNote,
-        boolean hasEvidence
+        boolean hasEvidence,
+        Long advanceId                // the advance this pays (Accounts Office), if any
 ) {}

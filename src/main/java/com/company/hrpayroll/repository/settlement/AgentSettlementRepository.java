@@ -18,6 +18,8 @@ public interface AgentSettlementRepository extends JpaRepository<AgentSettlement
 
     List<AgentSettlement> findByAgentIdOrderByPeriodEndDescIdDesc(Long agentId);
 
+    java.util.Optional<AgentSettlement> findFirstByPaymentRequestId(Long paymentRequestId);
+
     // Agents already paid for any day of this period: paying them again would pay those days twice.
     @Query("SELECT DISTINCT s.agentId FROM AgentSettlement s WHERE s.agentId IN :agentIds "
             + "AND s.periodStart <= :periodEnd AND s.periodEnd >= :periodStart")

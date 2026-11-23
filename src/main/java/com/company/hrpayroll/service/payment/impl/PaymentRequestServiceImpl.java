@@ -64,6 +64,7 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
     private final BusinessClock businessClock;
     private final PaymentEvidenceRepository evidenceRepository;
     private final AccountsOffice accountsOffice;
+    private final com.company.hrpayroll.repository.agentadvance.AgentAdvanceRepository advanceRepository;
 
     @Override
     @Transactional
@@ -175,7 +176,7 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
         // Where the organisation has an Accounts Office, it pays (with the mode of payment and proof), not the Admin.
         if (accountsOffice.enabled()) {
             throw new InvalidOperationException(
-                    "The Accounts Office pays agents here, recording how it was paid (M-Pesa, cheque or manual).");
+                    "The Accounts Office pays agents here, recording how it was paid (M-Pesa, cheque or cash).");
         }
         PaymentRequest request = findOrThrow(paymentRequestId);
         requireStatus(request, APPROVED, "released");
@@ -271,13 +272,12 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
             case "MANUAL" -> {
                 String reference = text(record.reference());
                 if (reference.length() < 3) {
-                    throw new InvalidOperationException(
-                            "Say how it was paid, e.g. the cash receipt number or the bank transfer reference");
+                    throw new InvalidOperationException("Enter the cash receipt number or reference");
                 }
                 request.setReleaseReference(clip(reference, 100));
-                summary = "Manual: " + clip(reference, 100);
+                summary = "Cash, receipt " + clip(reference, 100);
             }
-            default -> throw new InvalidOperationException("Choose how the agent was paid: M-Pesa, cheque or manual");
+            default -> throw new InvalidOperationException("Choose how the agent was paid: M-Pesa, cheque or cash");
         }
 
         String note = text(record.note());
@@ -403,7 +403,8 @@ public class PaymentRequestServiceImpl implements PaymentRequestService {
                 recipients.nameOf(request.getReleasedByUserId()),
                 paidTotal,
                 payments.size(),
-                evidenceRepository.existsByPaymentRequestId(request.getId()));
+                evidenceRepository.existsByPaymentRequestId(request.getId()),
+                advanceRepository.findFirstByPaymentRequestId(request.getId()).map(a -> a.getId()).orElse(null));
     }
 
     private String agentName(Long agentId) {

@@ -52,4 +52,7 @@ public class AgentAdvance extends BaseEntity {
 
     @Column(length = 500)
     private String rejectionReason;
+
+    // Where the organisation uses the Accounts Office: the payment it makes for this advance once approved (V41).
+    private Long paymentRequestId;
 }

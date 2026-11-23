@@ -12,6 +12,8 @@ public interface AgentAdvanceRepository extends JpaRepository<AgentAdvance, Long
 
     List<AgentAdvance> findByAgentId(Long agentId);
 
+    java.util.Optional<AgentAdvance> findFirstByPaymentRequestId(Long paymentRequestId);
+
     // Outstanding or partially recovered advances — what gets subtracted
     // from the agent's next payroll payable amount.
     List<AgentAdvance> findByAgentIdAndStatusNot(Long agentId, String status);

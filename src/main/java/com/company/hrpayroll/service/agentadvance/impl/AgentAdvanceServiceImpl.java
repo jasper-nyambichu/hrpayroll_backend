@@ -35,6 +35,8 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
     private final BusinessClock businessClock;
     private final NotificationService notificationService;
     private final NotificationRecipients recipients;
+    private final com.company.hrpayroll.service.company.AccountsOffice accountsOffice;
+    private final org.springframework.beans.factory.ObjectProvider<com.company.hrpayroll.service.payment.PaymentRequestService> paymentRequests;
 
     private static final String TYPE_REQUESTED = "AGENT_ADVANCE_REQUESTED";
     private static final String TYPE_APPROVED = "AGENT_ADVANCE_APPROVED";
@@ -96,12 +98,27 @@ public class AgentAdvanceServiceImpl implements AgentAdvanceService {
         advance.setAdvanceDate(businessClock.today());
         advance.setDecidedByUserId(adminUserId);
         advance.setDecidedAt(businessClock.now());
+
+        // Where the organisation uses the Accounts Office (Kisiimatt), the Accounts Office pays the approved advance
+        // (M-Pesa, cheque or cash, with proof) and the Admin and the agent are told when it is paid.
+        boolean accountsPays = accountsOffice.enabled();
+        if (accountsPays) {
+            String agentName = agentRepository.findById(advance.getAgentId()).map(a -> a.getName()).orElse("the agent");
+            Long paymentId = paymentRequests.getObject().createApproved(advance.getAgentId(), advance.getAmount(),
+                    "Advance to " + agentName + ": " + advance.getPurpose(), adminUserId);
+            advance.setPaymentRequestId(paymentId);
+            String toPay = "Advance for " + agentName + " approved: " + kes(advance.getAmount()) + " to pay.";
+            recipients.accountsOffice().forEach(user -> notificationService.notifyInApp(
+                    user.getId(), com.company.hrpayroll.service.payment.impl.PaymentRequestServiceImpl.TYPE_TO_PAY, toPay, paymentId));
+        }
         AgentAdvance saved = agentAdvanceRepository.save(advance);
 
         notificationService.resolveByReference(TYPE_REQUESTED, saved.getId());
         recipients.agentLogin(saved.getAgentId()).ifPresent(agentUser ->
                 notificationService.notifyInApp(agentUser.getId(), TYPE_APPROVED,
-                        "Your advance of " + kes(saved.getAmount()) + " was approved. It will be deducted from your next payment.",
+                        "Your advance of " + kes(saved.getAmount()) + " was approved."
+                                + (accountsPays ? " The Accounts Office will pay it to you." : "")
+                                + " It will be deducted from your next payment.",
                         saved.getId()));
 
         return toResponseWithAgentName(saved);

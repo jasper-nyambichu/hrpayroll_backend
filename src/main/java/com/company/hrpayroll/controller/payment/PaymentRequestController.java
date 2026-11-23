@@ -23,6 +23,7 @@ public class PaymentRequestController {
 
     private final PaymentRequestService paymentRequestService;
     private final AccessGuard accessGuard;
+    private final com.company.hrpayroll.service.payment.impl.PaymentReceiptService receiptService;
 
     // Who may SEE every agent's payment requests.
     private static final String STAFF_READ_ROLES =
@@ -99,6 +100,24 @@ public class PaymentRequestController {
                 method, reference, chequeNumber, chequeBank, chequeDate, paidOn, note);
         return ApiResponse.success("Payment recorded",
                 paymentRequestService.pay(paymentRequestId, record, evidence, accessGuard.currentUserId()));
+    }
+
+    // The receipt of a payment made (PDF): how it was paid, and for an invoice each branch's employees and amounts.
+    // Staff who read payments (Admin, Accounts Office), or the agent it was paid to.
+    @GetMapping("/{paymentRequestId}/receipt")
+    @PreAuthorize(STAFF_READ_ROLES + " or hasRole('AGENT')")
+    public org.springframework.http.ResponseEntity<byte[]> receipt(@PathVariable Long paymentRequestId) {
+        Long agentId = accessGuard.isAgent() ? accessGuard.currentAgentId() : null;
+        if (accessGuard.isAgent() && agentId == null) {
+            throw new com.company.hrpayroll.exception.ResourceNotFoundException("Payment not found with id: " + paymentRequestId);
+        }
+        var file = receiptService.receipt(paymentRequestId, agentId);
+        var headers = new org.springframework.http.HttpHeaders();
+        headers.setContentDispositionFormData("attachment", file.fileName());
+        return org.springframework.http.ResponseEntity.ok()
+                .headers(headers)
+                .contentType(org.springframework.http.MediaType.APPLICATION_PDF)
+                .body(file.content());
     }
 
     // The proof uploaded with a payment: staff who read payments, or the agent it was paid to.
